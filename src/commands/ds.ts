@@ -4,6 +4,8 @@ import {
   DEFAULT_MODEL,
   DEFAULT_REASONING_EFFORT,
   DEFAULT_SYSTEM_PROMPT,
+  AI_TIMEOUT_MS,
+  ATTACHMENT_TIMEOUT_MS,
   MAX_QUERY_CHARS,
   MAX_REPLY_CHARS,
   MAX_RESERVATION_NANO_USD,
@@ -14,8 +16,10 @@ import {
 } from "../config";
 import type { AIClient } from "../ai/deepseek";
 import { actualRequestCost, estimateMaxRequestCost } from "../ai/pricing";
+import type { AttachmentLoader, LoadedAttachment } from "../files/attachments";
 import type { DSConfigField } from "./router";
-import { DeepSeekError } from "../errors";
+import { UNKNOWN_COMMAND_REPLY } from "./router";
+import { AppError, DeepSeekError } from "../errors";
 import type { GroupAtMessageEvent } from "../qq/schema";
 import { canManageGroup } from "../security/permissions";
 import type {
@@ -35,6 +39,7 @@ export interface DSCommandDependencies {
   eventGuard: EventGuard;
   globalBudget: GlobalBudget;
   aiClient: AIClient;
+  attachmentLoader: AttachmentLoader;
   adminWhitelist: ReadonlyMap<string, ReadonlySet<string>>;
   groupLimitPerMinute: number;
   memberCooldownSeconds: number;
@@ -89,8 +94,12 @@ export async function handleDsAsk(
   question: string,
   deps: DSCommandDependencies,
 ): Promise<string> {
+  const hasAttachments = event.attachments.length > 0;
   if (question.length === 0) {
-    return "请在 /DS ask 后输入问题。";
+    if (!hasAttachments) {
+      return UNKNOWN_COMMAND_REPLY;
+    }
+    question = "请阅读并分析这个附件。";
   }
   if (question.length > MAX_QUERY_CHARS) {
     return `问题过长，请控制在 ${MAX_QUERY_CHARS} 字以内。`;
@@ -103,7 +112,10 @@ export async function handleDsAsk(
     return "服务繁忙，请稍后再试。";
   }
 
-  const reservedCost = Math.min(estimateMaxRequestCost(config.model), MAX_RESERVATION_NANO_USD);
+  const reservedCost = Math.min(
+    estimateMaxRequestCost(config.model, hasAttachments),
+    MAX_RESERVATION_NANO_USD,
+  );
   let globalReservation: ReservationResult;
   try {
     globalReservation = await deps.globalBudget.reserve(reservedCost);
@@ -136,12 +148,46 @@ export async function handleDsAsk(
     );
   }
 
+  let attachments: LoadedAttachment[];
+  try {
+    attachments = await deps.attachmentLoader.load(event.attachments);
+  } catch (error) {
+    await Promise.all([
+      settleSafely(
+        () =>
+          deps.eventGuard.settleAsk(
+            groupReservation.dayKey,
+            reservedCost,
+            0,
+          ),
+        deps.onSettlementError,
+      ),
+      settleSafely(
+        () =>
+          deps.globalBudget.settle(
+            globalReservation.dayKey,
+            reservedCost,
+            0,
+          ),
+        deps.onSettlementError,
+      ),
+    ]);
+    if (error instanceof AppError && error.code === "attachment_too_large") {
+      return "附件总大小或单文件大小超过限制，请压缩后重试。";
+    }
+    return "附件读取失败，请重新上传后再试。";
+  }
+
   try {
     const completion = await deps.aiClient.complete({
       model: config.model,
       reasoningEffort: config.reasoningEffort,
       systemPrompt: config.systemPrompt,
       question,
+      attachments,
+      ...(attachments.length > 0
+        ? { timeoutMs: AI_TIMEOUT_MS - ATTACHMENT_TIMEOUT_MS }
+        : {}),
       maxOutputTokens: MAX_OUTPUT_TOKENS,
     });
     const actualCost = Math.min(
@@ -306,4 +352,16 @@ export async function handleDsQuery(
     return `本群当前思考强度：${config.reasoningEffort}`;
   }
   return `本群当前 System Prompt（${config.systemPrompt.length} 字）：\n${config.systemPrompt}`;
+}
+
+export function handleDsList(field: "model" | "think" | "all"): string {
+  const modelLine = `可用模型：${ALLOWED_MODELS.join("、")}`;
+  const thinkLine = `可用思考等级：${ALLOWED_REASONING_EFFORTS.join("、")}`;
+  if (field === "model") {
+    return modelLine;
+  }
+  if (field === "think") {
+    return thinkLine;
+  }
+  return `${modelLine}\n${thinkLine}`;
 }

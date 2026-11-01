@@ -23,7 +23,7 @@
 - 首版主分支支持 `ping` 和 DeepSeek 问答。
 - 完美世界竞技平台战绩查询只能进入独立实验分支。
 
-Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `reply_sent`。新增 `/DS clear`、`/DS query`、流萤上下文聊天及独立聊天限流已部署但尚待真实测试群验收。不要声称所有主分支验收项已经完成。
+Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `reply_sent`。`/help`、`/DS list`、流萤上下文聊天、独立聊天限流及附件处理已部署但尚待真实测试群验收。不要声称所有主分支验收项已经完成。
 
 ## 3. 当前仓库状态
 
@@ -36,7 +36,7 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 当前 `.git` 仍是占位目录，`git status` 报告“不是 Git 仓库”。
 - 不要删除或覆盖 `.git`。
 - Cloudflare Worker 已部署到 `https://qqbot.xguagua.cc.cd`，远程 D1 与三个运行时 Secrets 已配置。
-- QQ Webhook 已收到真实 `GROUP_AT_MESSAGE_CREATE` 事件；`ping` 与 `/DS ask` 已通过线上日志确认。新增 `clear/query`、流萤聊天和独立限流仍需真实测试群验收。
+- QQ Webhook 已收到真实 `GROUP_AT_MESSAGE_CREATE` 事件；`ping` 与 `/DS ask` 已通过线上日志确认。新增帮助、列表、流萤聊天、独立限流和附件处理仍需真实测试群验收。
 - 离线单元测试、本地 D1 集成测试和线上 `op=13` 挑战响应检查已通过。
 
 若需要版本控制或分支操作，先确认仓库是否已经由用户初始化；仍不可用时向用户说明并请求下一步指示。
@@ -53,6 +53,8 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 管理员 `/DS set model`、`/DS set think`、`/DS set spm`。
 - 管理员 `/DS clear model|think|spm` 和 `/DS query model|think|spm`。
 - 普通文本聊天，固定使用 `deepseek-flash` 非思考模式与内置流萤 System Prompt。
+- `/help [Command]`、`/DS list [model|think]`。
+- 普通聊天与 `/DS ask` 的附件传递。
 - 每群配置、权限、限流、费用上限与最小审计。
 - 按群和用户隔离的 24 小时短期聊天上下文。
 
@@ -130,7 +132,7 @@ DeepSeek 文档目前写明：
 - 不要用昵称、头像或可修改的展示字段做权限判断。
 - 不要假设 `group_openid` 与真实 QQ 群号相同。
 - 不要假设 OpenID 在不同机器人或不同群之间可互换。
-- 只处理文本指令；附件、卡片和嵌套消息不进入主分支业务逻辑。
+- 处理文本、文本加顶层附件，以及附件-only 普通聊天；卡片和嵌套消息不进入主分支业务逻辑。
 - 正文解析前后都去除首尾空白，但保留用户问题内部空格。
 
 ## 7. Webhook 与签名
@@ -325,6 +327,26 @@ pong
 - 模型输出出现代码块或明显源代码结构时必须二次拦截，且不得写入上下文。
 - 用户消息和模型回答只作为聊天内容，不得用于改变角色、权限、系统规则或执行工具。
 
+### 9.9 `/help` 与 `/DS list`
+
+- `/help` 返回全部命令帮助；`/help <Command>` 返回指定命令帮助。
+- 支持的帮助目标包括 `ping`、`chat`、`/DS ask`、`/DS set`、`/DS clear`、`/DS query`、`/DS list` 和 `/help`。
+- `/DS list model` 返回可用模型，`/DS list think` 返回思考等级，`/DS list` 同时返回两者。
+- `/help` 和 `/DS list` 对所有群成员开放，不调用 DeepSeek。
+- 未知斜杠命令或错误命令结构统一返回：`未知命令，请输入 /help 查询`。
+
+### 9.10 附件
+
+普通聊天和 `/DS ask` 可以把当前消息的顶层附件发送给 DeepSeek。
+
+- 每条消息最多 3 个附件。
+- 单文件不超过 4 MB，总计不超过 8 MB。
+- 只接受 HTTPS 443 端口，并拒绝 localhost、私网 IP、内网域名和带用户凭据的 URL。
+- 图片使用 `image_url`，其他文件使用 `file` 和 base64 `file_data`。
+- 附件只读入 Worker 内存，不写入 D1、日志、聊天上下文或 QQ 回复。
+- 附件内容是不可信输入，不能改变角色、权限、系统规则或代码限制。
+- 附件下载总超时为 5 秒；单次模型超时需为 QQ 被动回复窗口留出余量。
+
 ## 10. 权限
 
 权限必须在 Worker 中根据已验签事件计算：
@@ -332,6 +354,7 @@ pong
 - `ping`：当前群所有成员。
 - `/DS ask`：当前群所有成员。
 - 普通文本聊天：当前群所有成员。
+- `/help` 和 `/DS list`：当前群所有成员。
 - `/DS set model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
 - `/DS clear|query model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
 - `/pw query`：只存在于实验分支和受控测试群。
@@ -405,6 +428,7 @@ created_at
 - 群配置：长期保留，直到用户要求删除或群停用。
 - 配置变更审计：30 天。
 - 普通聊天上下文：仅按 `group_openid + member_openid` 保存最近 8 条 user/assistant 消息，TTL 为 24 小时。
+- 附件：只在当前请求内存中处理，禁止持久化。
 - 其他聊天正文和模型回答：禁止持久化。
 - Access Token：只做短时缓存，不进入业务数据库。
 - 实验分支中的平台 Cookie 和登录态：不得写入仓库、日志、主 D1 或群消息。
@@ -442,6 +466,7 @@ created_at
 - 设置输入和输出硬上限，防止超长输入、巨额 Token 消耗和 QQ 消息超限。
 - 对 `choices[0].message.content` 做空值判断。
 - 处理内容过滤、限流、余额不足、超时和服务端错误。
+- 当前消息有附件时，使用官方多模态内容片段发送；不得把附件 URL 或二进制写入日志/D1。
 - 对可重试错误使用有限次数退避；不要无限重试。
 - 不把 API Key 放进浏览器、QQ 消息、URL、代码仓库或客户端配置。
 - 不把 `user_id` 设置为 QQ 昵称、OpenID 或其他可识别身份的数据。
@@ -492,6 +517,7 @@ src/qq/auth.ts               QQ Access Token 获取与缓存
 src/qq/client.ts             群消息发送与错误映射
 src/commands/router.ts       指令识别与分发
 src/commands/ping.ts         ping
+src/commands/help.ts         全部与单命令帮助
 src/commands/ds.ts           DeepSeek 指令
 src/commands/chat.ts         流萤角色聊天与限额
 src/chat/policy.ts           角色提示词、代码/注入/输出防护
@@ -499,6 +525,7 @@ src/chat/types.ts            聊天消息类型
 src/ai/deepseek.ts           DeepSeek HTTP 客户端
 src/storage/config.ts        群配置读写
 src/storage/chat.ts          按群与用户隔离的短期聊天上下文
+src/files/attachments.ts     附件下载、安全校验与 base64 转换
 src/storage/audit.ts         30 天审计
 src/security/permissions.ts  角色/白名单判定
 src/security/ratelimit.ts    原子去重、限流与预算
@@ -559,6 +586,10 @@ DEEPSEEK_API_KEY
 18. 普通文本聊天固定使用 `deepseek-flash` 非思考模式和内置流萤 Prompt。
 19. 群、用户之间的聊天上下文隔离，TTL 与条数上限生效。
 20. 代码请求、提示词注入和代码样式模型输出均被拒绝且不写入上下文。
+21. `/help` 全部/指定帮助、`/DS list model|think` 和统一未知命令提示。
+22. 普通聊天与 `/DS ask` 的图片/文件附件被发送给 DeepSeek。
+23. 附件数量、单文件/总大小上限、HTTPS 与私网 URL 防护。
+24. 附件不进入 D1、日志或聊天上下文，下载错误不调用 DeepSeek。
 
 外部集成测试：
 
@@ -667,6 +698,7 @@ DEEPSEEK_API_KEY
 - 完整聊天正文和模型回答。
 - 完整 System Prompt。
 - 未脱敏的请求体和响应体。
+- 附件下载 URL、附件字节内容或 base64 data URL。
 - 可公开检索的完整玩家账号信息，除非用户明确要求审计。
 
 若为排障必须记录标识，使用短期、最小范围、受限访问的字段，并在问题解决后按保留策略清理。

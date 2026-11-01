@@ -11,6 +11,9 @@ export type ErrorCode =
   | "upstream_timeout"
   | "response_empty"
   | "qq_business_error"
+  | "attachment_invalid"
+  | "attachment_too_large"
+  | "attachment_unavailable"
   | "reply_window_expired"
   | "internal";
 

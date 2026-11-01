@@ -16,11 +16,14 @@ import {
   MAX_RESERVATION_NANO_USD,
   CHAT_RATE_LIMIT,
   CHAT_RATE_WINDOW_MS,
+  AI_TIMEOUT_MS,
+  ATTACHMENT_TIMEOUT_MS,
   type DeepSeekModel,
   type ReasoningEffort,
 } from "../config";
 import type { ChatMessage } from "../chat/types";
-import { DeepSeekError } from "../errors";
+import { AppError, DeepSeekError } from "../errors";
+import type { AttachmentLoader, LoadedAttachment } from "../files/attachments";
 import type { GroupAtMessageEvent } from "../qq/schema";
 import type { EventGuard, GlobalBudget, ReservationResult } from "../security/ratelimit";
 import type { ChatSessionRepository } from "../storage/chat";
@@ -34,6 +37,7 @@ export interface ChatCommandDependencies {
   eventGuard: EventGuard;
   globalBudget: GlobalBudget;
   aiClient: AIClient;
+  attachmentLoader: AttachmentLoader;
   onPolicyBlock?: (reason: "code_request" | "prompt_injection" | "code_output") => void;
   onSettlementError?: (error: unknown) => void;
 }
@@ -78,9 +82,13 @@ export async function handleChat(
   message: string,
   deps: ChatCommandDependencies,
 ): Promise<string> {
-  const question = message.trim();
+  const hasAttachments = event.attachments.length > 0;
+  let question = message.trim();
   if (question.length === 0) {
-    return "想和流萤聊些什么呢？";
+    if (!hasAttachments) {
+      return "想和流萤聊些什么呢？";
+    }
+    question = "请看看这个附件，和我聊聊你注意到了什么。";
   }
   if (question.length > MAX_CHAT_INPUT_CHARS) {
     return `消息过长，请控制在 ${MAX_CHAT_INPUT_CHARS} 字以内。`;
@@ -95,7 +103,7 @@ export async function handleChat(
   }
 
   const reservedCost = Math.min(
-    estimateMaxRequestCost(CHAT_MODEL),
+    estimateMaxRequestCost(CHAT_MODEL, hasAttachments),
     MAX_RESERVATION_NANO_USD,
   );
   let globalReservation: ReservationResult;
@@ -127,6 +135,36 @@ export async function handleChat(
       deps.onSettlementError,
     );
     return deniedReply(groupReservation);
+  }
+
+  let attachments: LoadedAttachment[];
+  try {
+    attachments = await deps.attachmentLoader.load(event.attachments);
+  } catch (error) {
+    await Promise.all([
+      settleSafely(
+        () =>
+          deps.eventGuard.settleAsk(
+            groupReservation.dayKey,
+            reservedCost,
+            0,
+          ),
+        deps.onSettlementError,
+      ),
+      settleSafely(
+        () =>
+          deps.globalBudget.settle(
+            globalReservation.dayKey,
+            reservedCost,
+            0,
+          ),
+        deps.onSettlementError,
+      ),
+    ]);
+    if (error instanceof AppError && error.code === "attachment_too_large") {
+      return "附件总大小或单文件大小超过限制，请压缩后重试。";
+    }
+    return "附件读取失败，请重新上传后再试。";
   }
 
   let history: ChatMessage[];
@@ -168,7 +206,11 @@ export async function handleChat(
       systemPrompt: FIREFLY_SYSTEM_PROMPT,
       question,
       history,
+      attachments,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
+      ...(attachments.length > 0
+        ? { timeoutMs: AI_TIMEOUT_MS - ATTACHMENT_TIMEOUT_MS }
+        : {}),
     });
     actualCost = Math.min(
       reservedCost,

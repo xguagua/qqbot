@@ -6,11 +6,16 @@ export type ParsedCommand =
   | { kind: "ds_set"; field: DSConfigField; value: string }
   | { kind: "ds_clear"; field: DSConfigField }
   | { kind: "ds_query"; field: DSConfigField }
+  | { kind: "ds_list"; field: "model" | "think" | "all" }
+  | { kind: "help"; command: string }
   | { kind: "invalid"; usage: "ask" | "set" | "ds" };
 
 export const DS_USAGE =
   "用法：/DS ask <问题>、/DS set <model|think|spm> <值>、" +
-  "/DS clear <model|think|spm>、/DS query <model|think|spm>";
+  "/DS clear <model|think|spm>、/DS query <model|think|spm>、" +
+  "/DS list [model|think]";
+
+export const UNKNOWN_COMMAND_REPLY = "未知命令，请输入 /help 查询";
 
 export function parseCommand(rawContent: string): ParsedCommand | null {
   const content = rawContent.trim();
@@ -19,6 +24,11 @@ export function parseCommand(rawContent: string): ParsedCommand | null {
   }
   if (/^ping$/i.test(content)) {
     return { kind: "ping" };
+  }
+
+  const help = /^\/help(?:\s+([\s\S]*))?$/i.exec(content);
+  if (help !== null) {
+    return { kind: "help", command: (help[1] ?? "").trim() };
   }
 
   const ask = /^\/ds\s+ask(?:\s+([\s\S]*))?$/i.exec(content);
@@ -49,7 +59,19 @@ export function parseCommand(rawContent: string): ParsedCommand | null {
       : { kind: "ds_query", field };
   }
 
-  if (/^\/ds(?:\s|$)/i.test(content)) {
+  const list = /^\/ds\s+list(?:\s+([\s\S]*))?$/i.exec(content);
+  if (list !== null) {
+    const field = (list[1] ?? "").trim().toLowerCase();
+    if (field === "") {
+      return { kind: "ds_list", field: "all" };
+    }
+    if (field === "model" || field === "think") {
+      return { kind: "ds_list", field };
+    }
+    return { kind: "invalid", usage: "ds" };
+  }
+
+  if (content.startsWith("/")) {
     return { kind: "invalid", usage: "ds" };
   }
   return null;

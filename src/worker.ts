@@ -4,12 +4,14 @@ import { handleChat, type ChatCommandDependencies } from "./commands/chat";
 import {
   handleDsAsk,
   handleDsClear,
+  handleDsList,
   handleDsQuery,
   handleDsSet,
   type DSCommandDependencies,
 } from "./commands/ds";
+import { helpReply } from "./commands/help";
 import { PING_REPLY } from "./commands/ping";
-import { DS_USAGE, parseCommand } from "./commands/router";
+import { UNKNOWN_COMMAND_REPLY, parseCommand } from "./commands/router";
 import {
   loadRuntimeConfig,
   REPLY_WINDOW_MS,
@@ -18,6 +20,7 @@ import {
   type RuntimeConfig,
 } from "./config";
 import { AppError, errorCode, errorDiagnostic } from "./errors";
+import { HttpAttachmentLoader, type AttachmentLoader } from "./files/attachments";
 import { ConsoleLogger, type Logger } from "./log";
 import { QQApiClient, type MessageSender } from "./qq/client";
 import { QQTokenProvider, type TokenProvider } from "./qq/auth";
@@ -43,6 +46,7 @@ import { MAX_REPLY_CHARS } from "./config";
 export interface WebhookDependencies {
   configRepository: ConfigRepository;
   chatRepository: ChatSessionRepository;
+  attachmentLoader: AttachmentLoader;
   eventGuard(groupOpenid: string): EventGuard;
   globalBudget: GlobalBudget;
   messageSender: MessageSender;
@@ -84,6 +88,7 @@ export function createDefaultDependencies(
   return {
     configRepository: new D1ConfigRepository(env.DB),
     chatRepository: new D1ChatRepository(env.DB),
+    attachmentLoader: new HttpAttachmentLoader(),
     eventGuard: (groupOpenid) => new DurableEventGuard(env.GROUP_GUARD, groupOpenid),
     globalBudget: new DurableGlobalBudget(env.GLOBAL_BUDGET),
     messageSender: token.sender,
@@ -104,10 +109,8 @@ function dependencyFactoryFor(
 }
 
 function replyForInvalidUsage(usage: "ask" | "set" | "ds"): string {
-  if (usage === "ask") {
-    return "请在 /DS ask 后输入问题。";
-  }
-  return DS_USAGE;
+  void usage;
+  return UNKNOWN_COMMAND_REPLY;
 }
 
 function dsDependencies(
@@ -120,6 +123,7 @@ function dsDependencies(
     eventGuard: deps.eventGuard(event.groupOpenid),
     globalBudget: deps.globalBudget,
     aiClient: deps.aiClient,
+    attachmentLoader: deps.attachmentLoader,
     adminWhitelist: runtime.adminWhitelist,
     groupLimitPerMinute: runtime.groupLimitPerMinute,
     memberCooldownSeconds: runtime.memberCooldownMs / 1_000,
@@ -138,6 +142,7 @@ function chatDependencies(
     eventGuard: deps.eventGuard(event.groupOpenid),
     globalBudget: deps.globalBudget,
     aiClient: deps.aiClient,
+    attachmentLoader: deps.attachmentLoader,
     onPolicyBlock: (reason) => {
       deps.logger.info({ outcome: "chat_request_blocked", detail: reason });
     },
@@ -155,7 +160,10 @@ async function commandReply(
   const command = parseCommand(event.content);
   if (command === null) {
     const content = event.content.trim();
-    if (content.length > 0 && !content.startsWith("/")) {
+    if (
+      (content.length > 0 && !content.startsWith("/")) ||
+      event.attachments.length > 0
+    ) {
       return handleChat(
         event,
         content,
@@ -169,6 +177,12 @@ async function commandReply(
   }
   if (command.kind === "invalid") {
     return replyForInvalidUsage(command.usage);
+  }
+  if (command.kind === "help") {
+    return helpReply(command.command);
+  }
+  if (command.kind === "ds_list") {
+    return handleDsList(command.field);
   }
 
   const shared = dsDependencies(deps, runtime, event);

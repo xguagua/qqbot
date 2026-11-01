@@ -9,6 +9,13 @@ export interface ChallengePayload {
   eventTs: string;
 }
 
+export interface QQAttachment {
+  url: string;
+  filename: string | undefined;
+  contentType: string | undefined;
+  size: number | undefined;
+}
+
 export interface GroupAtMessageEvent {
   kind: "event";
   messageId: string;
@@ -16,6 +23,7 @@ export interface GroupAtMessageEvent {
   memberOpenid: string;
   memberRole: MemberRole;
   content: string;
+  attachments: readonly QQAttachment[];
   timestamp: string;
   timestampMs: number;
 }
@@ -31,6 +39,34 @@ function parseChallenge(d: Record<string, unknown>): ChallengePayload {
 
 function isEmptyArrayOrMissing(value: unknown): boolean {
   return value === undefined || (Array.isArray(value) && value.length === 0);
+}
+
+function parseAttachments(value: unknown): QQAttachment[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new AppError("invalid_request", "Invalid attachments", 400);
+  }
+  return value.map((item) => {
+    const attachment = asRecord(item);
+    if (attachment === null || !isNonEmptyString(attachment.url)) {
+      throw new AppError("invalid_request", "Invalid attachment", 400);
+    }
+    return {
+      url: attachment.url,
+      filename: isNonEmptyString(attachment.filename) ? attachment.filename : undefined,
+      contentType: isNonEmptyString(attachment.content_type)
+        ? attachment.content_type
+        : undefined,
+      size:
+        typeof attachment.size === "number" &&
+        Number.isSafeInteger(attachment.size) &&
+        attachment.size > 0
+          ? attachment.size
+          : undefined,
+    };
+  });
 }
 
 function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
@@ -64,7 +100,6 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
 
   if (
     data.message_type !== 0 ||
-    !isEmptyArrayOrMissing(data.attachments) ||
     !isEmptyArrayOrMissing(data.msg_elements) ||
     (data.ark_data !== undefined && data.ark_data !== null)
   ) {
@@ -83,6 +118,7 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
     memberOpenid: author.member_openid,
     memberRole: role,
     content: data.content,
+    attachments: parseAttachments(data.attachments),
     timestamp: data.timestamp,
     timestampMs,
   };

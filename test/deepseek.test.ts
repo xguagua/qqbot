@@ -110,6 +110,52 @@ describe("DeepSeek client", () => {
     ]);
   });
 
+  it("sends image and file attachments as multimodal content parts", async () => {
+    let body: Record<string, unknown> | undefined;
+    const client = new DeepSeekClient({
+      apiKey: "key",
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return successResponse();
+      },
+    });
+    await client.complete({
+      model: "deepseek-flash",
+      reasoningEffort: "none",
+      systemPrompt: "SYSTEM",
+      question: "请分析附件",
+      attachments: [
+        {
+          kind: "image",
+          filename: "image.png",
+          dataUrl: "data:image/png;base64,aGVsbG8=",
+        },
+        {
+          kind: "file",
+          filename: "notes.txt",
+          dataUrl: "data:text/plain;base64,aGVsbG8=",
+        },
+      ],
+      maxOutputTokens: 10,
+    });
+    const messages = body?.messages as Array<Record<string, unknown>>;
+    expect(messages[1]?.content).toEqual([
+      { type: "text", text: "请分析附件" },
+      {
+        type: "image_url",
+        image_url: {
+          url: "data:image/png;base64,aGVsbG8=",
+          detail: "low",
+        },
+      },
+      {
+        type: "file",
+        file_data: "data:text/plain;base64,aGVsbG8=",
+        filename: "notes.txt",
+      },
+    ]);
+  });
+
   it("maps 429 to a stable retryable error", async () => {
     let calls = 0;
     const client = new DeepSeekClient({

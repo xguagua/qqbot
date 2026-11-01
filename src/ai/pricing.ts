@@ -1,5 +1,6 @@
 import {
   MAX_ESTIMATED_INPUT_TOKENS,
+  MAX_ATTACHMENT_INPUT_TOKENS,
   MAX_OUTPUT_TOKENS,
   type DeepSeekModel,
 } from "../config";
@@ -27,10 +28,15 @@ export interface DeepSeekUsage {
   completionTokens: number;
 }
 
-export function estimateMaxRequestCost(model: DeepSeekModel): number {
+export function estimateMaxRequestCost(
+  model: DeepSeekModel,
+  hasAttachments = false,
+): number {
   const pricing = MODEL_PRICING[model];
   return (
-    MAX_ESTIMATED_INPUT_TOKENS * pricing.inputNanoUsdPerToken +
+    (MAX_ESTIMATED_INPUT_TOKENS +
+      (hasAttachments ? MAX_ATTACHMENT_INPUT_TOKENS : 0)) *
+      pricing.inputNanoUsdPerToken +
     MAX_OUTPUT_TOKENS * pricing.outputNanoUsdPerToken
   );
 }

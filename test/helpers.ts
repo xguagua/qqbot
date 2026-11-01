@@ -1,8 +1,16 @@
 import type { AIClient, DeepSeekCompletion, DeepSeekCompletionRequest } from "../src/ai/deepseek";
 import type { ChatMessage } from "../src/chat/types";
+import type {
+  AttachmentLoader,
+  LoadedAttachment,
+} from "../src/files/attachments";
 import { DEFAULT_SYSTEM_PROMPT, type Env, type RuntimeConfig } from "../src/config";
 import type { Logger, LogFields } from "../src/log";
-import type { GroupAtMessageEvent, MemberRole } from "../src/qq/schema";
+import type {
+  GroupAtMessageEvent,
+  MemberRole,
+  QQAttachment,
+} from "../src/qq/schema";
 import { signWebhookPayload } from "../src/qq/verify";
 import type { MessageSender, QQMessage } from "../src/qq/client";
 import {
@@ -55,6 +63,7 @@ export function event(overrides: Partial<GroupAtMessageEvent> = {}): GroupAtMess
     memberOpenid: "member-1",
     memberRole: "member",
     content: "ping",
+    attachments: [],
     timestamp: now.toISOString(),
     timestampMs: now.getTime(),
     ...overrides,
@@ -80,9 +89,14 @@ export async function signedEventRequest(
         member_role: value.memberRole,
       },
       content: value.content,
+      attachments: value.attachments.map((attachment) => ({
+        url: attachment.url,
+        filename: attachment.filename,
+        content_type: attachment.contentType,
+        size: attachment.size,
+      })),
       timestamp: value.timestamp,
       message_type: 0,
-      attachments: [],
       msg_elements: [],
     },
   };
@@ -230,6 +244,26 @@ export class FakeMessageSender implements MessageSender {
   }
 }
 
+export class FakeAttachmentLoader implements AttachmentLoader {
+  readonly requests: Array<readonly QQAttachment[]> = [];
+  loaded: LoadedAttachment[] = [
+    {
+      kind: "file",
+      filename: "example.txt",
+      dataUrl: "data:text/plain;base64,aGVsbG8=",
+    },
+  ];
+  error: unknown;
+
+  async load(attachments: readonly QQAttachment[]): Promise<LoadedAttachment[]> {
+    this.requests.push(attachments);
+    if (this.error !== undefined) {
+      throw this.error;
+    }
+    return this.loaded;
+  }
+}
+
 export class MemoryChatRepository implements ChatSessionRepository {
   readonly sessions = new Map<string, ChatMessage[]>();
 
@@ -270,6 +304,7 @@ export class FakeLogger implements Logger {
 export interface Harness {
   configs: MemoryConfigRepository;
   chats: MemoryChatRepository;
+  attachments: FakeAttachmentLoader;
   guards: Map<string, FakeEventGuard>;
   globalBudget: FakeGlobalBudget;
   ai: FakeAIClient;
@@ -292,6 +327,7 @@ export function createHarness(options: {
 } = {}): Harness {
   const configs = new MemoryConfigRepository();
   const chats = new MemoryChatRepository();
+  const attachments = new FakeAttachmentLoader();
   const guards = new Map<string, FakeEventGuard>();
   const groupLimitPerMinute = options.groupLimit ?? 3;
   const memberCooldownMs = options.cooldownMs ?? 30_000;
@@ -313,6 +349,7 @@ export function createHarness(options: {
     const deps: WebhookDependencies = {
       configRepository: configs,
       chatRepository: chats,
+      attachmentLoader: attachments,
       eventGuard(groupOpenid) {
         let guard = guards.get(groupOpenid);
         if (guard === undefined) {
@@ -351,6 +388,7 @@ export function createHarness(options: {
   return {
     configs,
     chats,
+    attachments,
     guards,
     globalBudget: global,
     ai,

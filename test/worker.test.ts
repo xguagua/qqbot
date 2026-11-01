@@ -4,7 +4,7 @@ import {
   DEFAULT_REASONING_EFFORT,
   DEFAULT_SYSTEM_PROMPT,
 } from "../src/config";
-import { DeepSeekError } from "../src/errors";
+import { AppError, DeepSeekError } from "../src/errors";
 import { handleWebhook } from "../src/worker";
 import {
   challengeRequest,
@@ -42,6 +42,53 @@ describe("Worker webhook flow", () => {
     );
     expect(headResponse.status).toBe(200);
     await expect(headResponse.text()).resolves.toBe("");
+  });
+
+  it("returns general, specific, and unknown help responses", async () => {
+    const harness = createHarness();
+    for (const [messageId, content] of [
+      ["help-all", "/help"],
+      ["help-specific", "/help /DS query"],
+      ["help-unknown", "/help nonsense"],
+      ["unknown-command", "/not-a-command"],
+    ] as const) {
+      await submit(
+        await signedEventRequest(event({ messageId, content })),
+        testEnv(),
+        harness,
+      );
+    }
+    await harness.flush();
+
+    const replies = harness.sender.messages.map((message) => message.content);
+    expect(replies[0]).toContain("/DS list");
+    expect(replies[1]).toContain("/DS query model|think|spm");
+    expect(replies[2]).toBe("未知命令，请输入 /help 查询");
+    expect(replies[3]).toBe("未知命令，请输入 /help 查询");
+    expect(harness.ai.requests).toHaveLength(0);
+  });
+
+  it("lists available models and thinking levels for all members", async () => {
+    const harness = createHarness();
+    for (const [messageId, content] of [
+      ["list-model", "/DS list model"],
+      ["list-think", "/DS list THINK"],
+      ["list-all", "/DS list"],
+    ] as const) {
+      await submit(
+        await signedEventRequest(event({ messageId, content })),
+        testEnv(),
+        harness,
+      );
+    }
+    await harness.flush();
+
+    const replies = harness.sender.messages.map((message) => message.content);
+    expect(replies[0]).toContain("deepseek-flash");
+    expect(replies[0]).toContain("deepseek-v4-pro");
+    expect(replies[1]).toContain("none、low、high、max");
+    expect(replies[2]).toContain("可用模型");
+    expect(replies[2]).toContain("可用思考等级");
   });
 
   it("answers a challenge with the derived signature", async () => {
@@ -728,39 +775,108 @@ describe("Worker webhook flow", () => {
     expect(logs).not.toContain("private upstream detail");
   });
 
-  it("ignores non-text attachments", async () => {
+  it("sends chat attachments to DeepSeek without persisting file data", async () => {
     const harness = createHarness();
-    const value = event();
-    const raw = new TextEncoder().encode(
-      JSON.stringify({
-        op: 0,
-        t: "GROUP_AT_MESSAGE_CREATE",
-        d: {
-          id: "attachment-event",
-          group_openid: "group-a",
-          author: { member_openid: "member-1", member_role: "member" },
-          content: "ping",
-          timestamp: value.timestamp,
-          message_type: 0,
-          attachments: [{ url: "https://example.invalid/file" }],
+    const value = event({
+      messageId: "attachment-chat",
+      content: "   ",
+      attachments: [
+        {
+          url: "https://cdn.example.test/file.txt",
+          filename: "notes.txt",
+          contentType: "text/plain",
+          size: 5,
         },
-      }),
-    );
-    const { signWebhookPayload } = await import("../src/qq/verify");
-    const timestamp = String(Math.floor(Date.now() / 1_000));
-    const signature = await signWebhookPayload(TEST_SECRET, timestamp, raw);
-    const request = new Request("https://worker.example/webhook", {
-      method: "POST",
-      headers: {
-        "x-bot-appid": "test-app-id",
-        "x-signature-ed25519": signature,
-        "x-signature-timestamp": timestamp,
-      },
-      body: raw,
+      ],
     });
-    await submit(request, testEnv(), harness);
+    await submit(
+      await signedEventRequest(value),
+      testEnv(),
+      harness,
+    );
     await harness.flush();
-    expect(harness.tasks).toHaveLength(0);
-    expect(harness.sender.messages).toHaveLength(0);
+    expect(harness.attachments.requests).toHaveLength(1);
+    expect(harness.ai.requests[0]?.attachments).toEqual([
+      {
+        kind: "file",
+        filename: "example.txt",
+        dataUrl: "data:text/plain;base64,aGVsbG8=",
+      },
+    ]);
+    expect(harness.ai.requests[0]?.question).toContain("附件");
+    expect(harness.sender.messages).toHaveLength(1);
+    expect(JSON.stringify([...harness.chats.sessions.values()])).not.toContain(
+      "aGVsbG8=",
+    );
+  });
+
+  it("sends /DS ask attachments to DeepSeek", async () => {
+    const harness = createHarness();
+    harness.attachments.loaded = [
+      {
+        kind: "image",
+        filename: "screenshot.png",
+        dataUrl: "data:image/png;base64,aGVsbG8=",
+      },
+    ];
+    await submit(
+      await signedEventRequest(
+        event({
+          messageId: "attachment-ds-ask",
+          content: "/DS ask 描述这个附件",
+          attachments: [
+            {
+              url: "https://cdn.example.test/image.png",
+              filename: "screenshot.png",
+              contentType: "image/png",
+              size: 5,
+            },
+          ],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.attachments.requests).toHaveLength(1);
+    expect(harness.ai.requests[0]?.attachments).toEqual([
+      {
+        kind: "image",
+        filename: "screenshot.png",
+        dataUrl: "data:image/png;base64,aGVsbG8=",
+      },
+    ]);
+    expect(harness.sender.messages).toHaveLength(1);
+  });
+
+  it("returns an attachment error without calling DeepSeek", async () => {
+    const harness = createHarness();
+    harness.attachments.error = new AppError(
+      "attachment_too_large",
+      "too large",
+    );
+    await submit(
+      await signedEventRequest(
+        event({
+          messageId: "attachment-too-large",
+          content: "请看看文件",
+          attachments: [
+            {
+              url: "https://cdn.example.test/large.bin",
+              filename: "large.bin",
+              contentType: "application/octet-stream",
+              size: 9 * 1024 * 1024,
+            },
+          ],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+    expect(harness.ai.requests).toHaveLength(0);
+    expect(harness.sender.messages[0]?.content).toContain("超过限制");
+    expect(harness.chats.sessions.size).toBe(0);
   });
 });

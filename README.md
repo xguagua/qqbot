@@ -9,13 +9,15 @@ Cloudflare Worker 实现的 QQ 官方机器人主分支。它只处理群内 `@�
 - 管理员 `/DS set spm <System Prompt>`
 - 管理员 `/DS clear <model|think|spm>`
 - 管理员 `/DS query <model|think|spm>`
+- `/help [Command]` 与 `/DS list [model|think]`
 - 普通文本：以流萤角色进行按用户隔离的短期聊天
+- 普通聊天和 `/DS ask` 支持附带文件
 
 `/pw` 不在主分支中。
 
 ## 当前状态
 
-主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 已部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。`/DS clear`、`/DS query`、流萤上下文聊天和独立聊天限流已部署，仍需在测试群完成真实交互验收。
+主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 已部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。`/help`、`/DS list`、流萤上下文聊天、独立聊天限流及聊天/DS 附件处理已部署，仍需在测试群完成真实交互验收。
 
 工作区中的 `.git` 仍是占位目录；本项目没有初始化或操作 Git 仓库。
 
@@ -55,6 +57,17 @@ QQ Webhook
 - 普通文本聊天固定使用 `deepseek-flash:off`，API 映射为 `model=deepseek-flash` + `reasoning_effort=none`，并使用不可覆盖的流萤角色 System Prompt。
 - 聊天限流使用独立计数：每人每 30 秒最多 5 次，不占用 `/DS ask` 的每群每分钟或每人冷却额度。
 - 代码编写/修改/调试请求和高置信度提示词注入不调用 DeepSeek；代码样式模型输出会再次拦截。
+- 普通聊天和 `/DS ask` 会下载当前消息附件并以 DeepSeek `image_url`/`file` 内容片段发送；附件不写入 D1。
+
+## 附件处理
+
+- 每条消息最多 3 个附件。
+- 单文件上限 4 MB，附件总大小上限 8 MB。
+- 只接受 HTTPS、标准 443 端口，并拒绝 localhost、私网 IP 和带用户凭据的 URL。
+- 图片使用 `image_url` 片段，其他文件使用 `file` 与 base64 `file_data` 片段。
+- 附件只在当前 Worker 请求内存中处理，不写入 D1、日志或聊天上下文。
+- 附件下载总超时 5 秒；带附件请求会缩短 DeepSeek 响应超时，为 QQ 被动回复留余量。
+- 附件内容按不可信输入处理，不能改变角色、系统规则或绕过代码限制。
 
 ## 服务端硬限制
 
@@ -65,6 +78,9 @@ QQ Webhook
 | `/DS ask` 每群每分钟 | 3 次 | 最多 10 次 |
 | `/DS ask` 每人冷却 | 30 秒 | 10–300 秒 |
 | 普通聊天每人 30 秒 | 5 次 | 固定 |
+| 附件数量 | 3 个 | 固定 |
+| 单附件大小 | 4 MB | 固定 |
+| 附件总大小 | 8 MB | 固定 |
 | 每群每日预算（UTC） | `$0.10` | 最多 `$1.00` |
 | 全局每日预算（UTC） | `$5.00` | 最多 `$25.00` |
 | 单次问题长度 | 2,000 字 | 固定 |
@@ -387,7 +403,7 @@ pnpm exec wrangler tail qqbot --format pretty
 - `settlement_failed`
 - `reply_window_expired`
 
-日志不会输出聊天正文、模型回答、完整 System Prompt、Access Token 或 Secret。不要为了排障临时加入打印完整 `env`、请求头、请求 Body 或模型响应的日志。
+日志不会输出聊天正文、模型回答、完整 System Prompt、附件 URL、附件字节、Access Token 或 Secret。不要为了排障临时加入打印完整 `env`、请求头、请求 Body 或模型响应的日志。
 
 ### 11. 测试群冒烟验收
 
@@ -441,6 +457,21 @@ pong
 
 每次 `clear` 只重置指定字段，其他群配置保持不变。默认值为 `deepseek-flash`、`low` 和仓库内置安全 Prompt。
 
+帮助与能力列表：
+
+```text
+@机器人 /help
+@机器人 /help /DS query
+@机器人 /DS list model
+@机器人 /DS list think
+```
+
+输入不存在的斜杠命令或错误命令结构时，应返回：
+
+```text
+未知命令，请输入 /help 查询
+```
+
 #### 11.3 验证 `/DS ask`
 
 ```text
@@ -476,6 +507,15 @@ pong
 - 请求编写、修改或调试代码时直接拒绝，且不调用 DeepSeek。
 - 要求忽略系统指令、改变角色或披露 Prompt 时直接拒绝。
 - 即使模型试图输出代码块，Worker 也会二次拦截。
+- 聊天附带图片或文件时会一并发送给 DeepSeek，且附件不会写入聊天上下文。
+
+再测试 `/DS ask` 附件：
+
+```text
+@机器人 /DS ask 请描述这个附件
+```
+
+发送时附上 1 个不超过限制的图片或文件，预期 DeepSeek 能结合附件回答。
 
 #### 11.5 验证去重和被动回复
 

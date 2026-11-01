@@ -49,6 +49,26 @@ describe("command routing", () => {
     });
   });
 
+  it("routes help and DS list commands", () => {
+    expect(parseCommand("/HELP")).toEqual({ kind: "help", command: "" });
+    expect(parseCommand("/help /DS ask")).toEqual({
+      kind: "help",
+      command: "/DS ask",
+    });
+    expect(parseCommand("/DS LIST")).toEqual({
+      kind: "ds_list",
+      field: "all",
+    });
+    expect(parseCommand("/ds list MODEL")).toEqual({
+      kind: "ds_list",
+      field: "model",
+    });
+    expect(parseCommand("/ds list think")).toEqual({
+      kind: "ds_list",
+      field: "think",
+    });
+  });
+
   it("reports malformed DS commands", () => {
     expect(parseCommand("/ds wat")).toEqual({ kind: "invalid", usage: "ds" });
     expect(parseCommand("/ds set unknown value")).toEqual({
@@ -61,6 +81,7 @@ describe("command routing", () => {
       kind: "invalid",
       usage: "ds",
     });
+    expect(parseCommand("/unknown")).toEqual({ kind: "invalid", usage: "ds" });
   });
 
   it("ignores unrelated messages", () => {

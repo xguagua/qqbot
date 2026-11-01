@@ -3,6 +3,7 @@ import { AppError, DeepSeekError } from "../errors";
 import type { DeepSeekUsage } from "./pricing";
 import { asRecord } from "../util";
 import type { ChatMessage } from "../chat/types";
+import type { LoadedAttachment } from "../files/attachments";
 
 export interface DeepSeekCompletionRequest {
   model: DeepSeekModel;
@@ -10,6 +11,7 @@ export interface DeepSeekCompletionRequest {
   systemPrompt: string;
   question: string;
   history?: readonly ChatMessage[];
+  attachments?: readonly LoadedAttachment[];
   maxOutputTokens: number;
   timeoutMs?: number;
 }
@@ -111,6 +113,24 @@ export class DeepSeekClient implements AIClient {
 
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), remaining);
+      const userContent =
+        request.attachments !== undefined && request.attachments.length > 0
+          ? [
+              { type: "text", text: request.question },
+              ...request.attachments.map((attachment) =>
+                attachment.kind === "image"
+                  ? {
+                      type: "image_url",
+                      image_url: { url: attachment.dataUrl, detail: "low" },
+                    }
+                  : {
+                      type: "file",
+                      file_data: attachment.dataUrl,
+                      filename: attachment.filename,
+                    },
+              ),
+            ]
+          : request.question;
       let response: Response;
       try {
         response = await this.#fetch(this.#endpoint, {
@@ -127,7 +147,7 @@ export class DeepSeekClient implements AIClient {
                 role: message.role,
                 content: message.content,
               })),
-              { role: "user", content: request.question },
+              { role: "user", content: userContent },
             ],
             reasoning_effort: request.reasoningEffort,
             max_tokens: request.maxOutputTokens,
