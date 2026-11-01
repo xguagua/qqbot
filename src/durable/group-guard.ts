@@ -50,6 +50,9 @@ export class GroupGuard extends DurableObject<Env> {
       if (path === "/reserve") {
         return await this.#reserve(request);
       }
+      if (path === "/reserve-chat") {
+        return await this.#reserveChat(request);
+      }
       if (path === "/settle") {
         return await this.#settle(request);
       }
@@ -84,6 +87,24 @@ export class GroupGuard extends DurableObject<Env> {
     }
 
     const result = this.#machine!.reserveAsk(
+      value.memberOpenid,
+      value.reservedNanoUsd,
+      Date.now(),
+    );
+    await this.#persist();
+    return jsonResponse(result);
+  }
+
+  async #reserveChat(request: Request): Promise<Response> {
+    const { value } = await readJsonObject(request, 4_096);
+    if (!isNonEmptyString(value.memberOpenid) || !positiveCost(value.reservedNanoUsd)) {
+      throw new AppError("invalid_request", "Invalid chat reservation", 400);
+    }
+    if (value.reservedNanoUsd > MAX_RESERVATION_NANO_USD) {
+      throw new AppError("invalid_request", "Reservation is too large", 400);
+    }
+
+    const result = this.#machine!.reserveChat(
       value.memberOpenid,
       value.reservedNanoUsd,
       Date.now(),

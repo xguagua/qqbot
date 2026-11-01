@@ -29,6 +29,8 @@ export const REPLY_WINDOW_SAFETY_MS = 15_000;
 export const EVENT_DEDUPE_TTL_MS = 10 * 60_000;
 export const CHAT_CONTEXT_TTL_MS = 24 * 60 * 60_000;
 export const CHAT_CONTEXT_MAX_MESSAGES = 8;
+export const CHAT_RATE_WINDOW_MS = 30_000;
+export const CHAT_RATE_LIMIT = 5;
 export const AUDIT_RETENTION_DAYS = 30;
 
 export interface AppBindings {

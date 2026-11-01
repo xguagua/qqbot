@@ -14,6 +14,8 @@ import {
   MAX_OUTPUT_TOKENS,
   MAX_REPLY_CHARS,
   MAX_RESERVATION_NANO_USD,
+  CHAT_RATE_LIMIT,
+  CHAT_RATE_WINDOW_MS,
   type DeepSeekModel,
   type ReasoningEffort,
 } from "../config";
@@ -32,24 +34,17 @@ export interface ChatCommandDependencies {
   eventGuard: EventGuard;
   globalBudget: GlobalBudget;
   aiClient: AIClient;
-  groupLimitPerMinute: number;
-  memberCooldownSeconds: number;
   onPolicyBlock?: (reason: "code_request" | "prompt_injection" | "code_output") => void;
   onSettlementError?: (error: unknown) => void;
 }
 
 function deniedReply(
   result: ReservationResult,
-  groupLimitPerMinute: number,
-  memberCooldownSeconds: number,
 ): string {
-  if (result.reason === "member_cooldown") {
-    return `请求过于频繁：每人 ${memberCooldownSeconds} 秒内最多发起 1 次 AI 对话，请稍后再试。`;
-  }
   if (result.reason === "group_budget") {
     return "本群今日 AI 额度已用完，请稍后再试。";
   }
-  return `请求过于频繁：本群每分钟最多 ${groupLimitPerMinute} 次 AI 对话，请稍后再试。`;
+  return `请求过于频繁：每人 ${CHAT_RATE_WINDOW_MS / 1_000} 秒内最多发送 ${CHAT_RATE_LIMIT} 次聊天消息，请稍后再试。`;
 }
 
 function upstreamFailureReply(error: unknown): string {
@@ -115,7 +110,7 @@ export async function handleChat(
 
   let groupReservation: ReservationResult;
   try {
-    groupReservation = await deps.eventGuard.reserveAsk(
+    groupReservation = await deps.eventGuard.reserveChat(
       event.memberOpenid,
       reservedCost,
     );
@@ -131,11 +126,7 @@ export async function handleChat(
       () => deps.globalBudget.settle(globalReservation.dayKey, reservedCost, 0),
       deps.onSettlementError,
     );
-    return deniedReply(
-      groupReservation,
-      deps.groupLimitPerMinute,
-      deps.memberCooldownSeconds,
-    );
+    return deniedReply(groupReservation);
   }
 
   let history: ChatMessage[];

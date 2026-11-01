@@ -131,7 +131,6 @@ function dsDependencies(
 
 function chatDependencies(
   deps: WebhookDependencies,
-  runtime: RuntimeConfig,
   event: GroupAtMessageEvent,
 ): ChatCommandDependencies {
   return {
@@ -139,8 +138,6 @@ function chatDependencies(
     eventGuard: deps.eventGuard(event.groupOpenid),
     globalBudget: deps.globalBudget,
     aiClient: deps.aiClient,
-    groupLimitPerMinute: runtime.groupLimitPerMinute,
-    memberCooldownSeconds: runtime.memberCooldownMs / 1_000,
     onPolicyBlock: (reason) => {
       deps.logger.info({ outcome: "chat_request_blocked", detail: reason });
     },
@@ -162,7 +159,7 @@ async function commandReply(
       return handleChat(
         event,
         content,
-        chatDependencies(deps, runtime, event),
+        chatDependencies(deps, event),
       );
     }
     return null;

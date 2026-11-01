@@ -165,17 +165,23 @@ export class MemoryConfigRepository implements ConfigRepository {
 
 export class FakeEventGuard implements EventGuard {
   readonly machine: GroupGuardState;
+  readonly #now: () => number;
 
-  constructor(machine: GroupGuardState) {
+  constructor(machine: GroupGuardState, now: () => number = Date.now) {
     this.machine = machine;
+    this.#now = now;
   }
 
   async claimEvent(messageId: string): Promise<boolean> {
-    return this.machine.claimEvent(messageId, Date.now());
+    return this.machine.claimEvent(messageId, this.#now());
   }
 
   async reserveAsk(memberOpenid: string, reservedNanoUsd: number): Promise<ReservationResult> {
-    return this.machine.reserveAsk(memberOpenid, reservedNanoUsd, Date.now());
+    return this.machine.reserveAsk(memberOpenid, reservedNanoUsd, this.#now());
+  }
+
+  async reserveChat(memberOpenid: string, reservedNanoUsd: number): Promise<ReservationResult> {
+    return this.machine.reserveChat(memberOpenid, reservedNanoUsd, this.#now());
   }
 
   async settleAsk(dayKey: string, reservedNanoUsd: number, actualNanoUsd: number): Promise<void> {
@@ -282,6 +288,7 @@ export function createHarness(options: {
   groupBudget?: number;
   globalBudget?: number;
   runtime?: Partial<RuntimeConfig>;
+  now?: () => number;
 } = {}): Harness {
   const configs = new MemoryConfigRepository();
   const chats = new MemoryChatRepository();
@@ -316,6 +323,7 @@ export function createHarness(options: {
                 windowStartedAt: 0,
                 windowCount: 0,
                 memberCooldowns: {},
+                chatMemberWindows: {},
                 budgetDay: new Date().toISOString().slice(0, 10),
                 budgetSpentNanoUsd: 0,
               },
@@ -325,6 +333,7 @@ export function createHarness(options: {
                 groupDailyBudgetNanoUsd,
               },
             ),
+            options.now ?? Date.now,
           );
           guards.set(groupOpenid, guard);
         }
