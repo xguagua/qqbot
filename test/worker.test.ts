@@ -688,7 +688,7 @@ describe("Worker webhook flow", () => {
     ).toBe(true);
   });
 
-  it("limits chat to five per member per thirty seconds independently from /DS", async () => {
+  it("does not rate limit chat and keeps DS limits independent", async () => {
     const now = Date.parse("2026-11-01T10:00:00Z");
     const harness = createHarness({ now: () => now, groupLimit: 3 });
     for (let index = 0; index < 6; index += 1) {
@@ -706,12 +706,7 @@ describe("Worker webhook flow", () => {
     }
     await harness.flush();
 
-    expect(harness.ai.requests).toHaveLength(5);
-    expect(
-      harness.sender.messages.some((message) =>
-        message.content.includes("30 秒内最多发送 5 次"),
-      ),
-    ).toBe(true);
+    expect(harness.ai.requests).toHaveLength(6);
 
     await submit(
       await signedEventRequest(
@@ -725,7 +720,7 @@ describe("Worker webhook flow", () => {
       harness,
     );
     await harness.flush();
-    expect(harness.ai.requests).toHaveLength(6);
+    expect(harness.ai.requests).toHaveLength(7);
   });
 
   it("does not call DeepSeek after the group budget is exhausted", async () => {

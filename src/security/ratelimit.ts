@@ -1,6 +1,4 @@
 import {
-  CHAT_RATE_LIMIT,
-  CHAT_RATE_WINDOW_MS,
   EVENT_DEDUPE_TTL_MS,
   type GroupGuardLimits,
 } from "../config";
@@ -14,7 +12,6 @@ export interface GuardState {
   windowStartedAt: number;
   windowCount: number;
   memberCooldowns: Record<string, number>;
-  chatMemberWindows: Record<string, { windowStartedAt: number; count: number }>;
   budgetDay: string;
   budgetSpentNanoUsd: number;
 }
@@ -22,7 +19,6 @@ export interface GuardState {
 export type ReservationDenial =
   | "group_rate_limit"
   | "member_cooldown"
-  | "chat_rate_limit"
   | "group_budget";
 
 export interface ReservationResult {
@@ -53,7 +49,6 @@ function emptyGuardState(now: number): GuardState {
     windowStartedAt: Math.floor(now / 60_000) * 60_000,
     windowCount: 0,
     memberCooldowns: {},
-    chatMemberWindows: {},
     budgetDay: utcDay(now),
     budgetSpentNanoUsd: 0,
   };
@@ -86,29 +81,6 @@ export function normalizeGuardState(value: unknown, now: number): GuardState {
     }
   }
 
-  const chatMemberWindows: GuardState["chatMemberWindows"] = {};
-  if (asRecord(record.chatMemberWindows) !== null) {
-    for (const [key, rawWindow] of Object.entries(
-      record.chatMemberWindows as Record<string, unknown>,
-    )) {
-      const windowState = asRecord(rawWindow);
-      if (
-        isNonEmptyString(key) &&
-        windowState !== null &&
-        typeof windowState.windowStartedAt === "number" &&
-        Number.isFinite(windowState.windowStartedAt) &&
-        typeof windowState.count === "number" &&
-        Number.isSafeInteger(windowState.count) &&
-        windowState.count >= 0
-      ) {
-        chatMemberWindows[key] = {
-          windowStartedAt: windowState.windowStartedAt,
-          count: windowState.count,
-        };
-      }
-    }
-  }
-
   return {
     events,
     windowStartedAt:
@@ -122,7 +94,6 @@ export function normalizeGuardState(value: unknown, now: number): GuardState {
         ? record.windowCount
         : 0,
     memberCooldowns,
-    chatMemberWindows,
     budgetDay: isNonEmptyString(record.budgetDay) ? record.budgetDay : fallback.budgetDay,
     budgetSpentNanoUsd:
       typeof record.budgetSpentNanoUsd === "number" &&
@@ -196,6 +167,7 @@ export class GroupGuardState {
   }
 
   reserveChat(memberOpenid: string, reservedNanoUsd: number, now: number): ReservationResult {
+    void memberOpenid;
     const dayKey = utcDay(now);
     if (this.state.budgetDay !== dayKey) {
       this.state.budgetDay = dayKey;
@@ -206,24 +178,7 @@ export class GroupGuardState {
       return { allowed: false, reason: "group_budget", dayKey };
     }
 
-    const windowStartedAt = Math.floor(now / CHAT_RATE_WINDOW_MS) * CHAT_RATE_WINDOW_MS;
-    let memberWindow = this.state.chatMemberWindows[memberOpenid];
-    if (memberWindow === undefined || memberWindow.windowStartedAt !== windowStartedAt) {
-      memberWindow = { windowStartedAt, count: 0 };
-      this.state.chatMemberWindows[memberOpenid] = memberWindow;
-    }
-    if (memberWindow.count >= CHAT_RATE_LIMIT) {
-      return { allowed: false, reason: "chat_rate_limit", dayKey };
-    }
-
-    memberWindow.count += 1;
     this.state.budgetSpentNanoUsd += reservedNanoUsd;
-
-    for (const [member, window] of Object.entries(this.state.chatMemberWindows)) {
-      if (window.windowStartedAt < now - 86_400_000) {
-        delete this.state.chatMemberWindows[member];
-      }
-    }
     return { allowed: true, dayKey };
   }
 
@@ -322,7 +277,6 @@ function parseReservation(record: Record<string, unknown>): ReservationResult {
     (record.reason !== undefined &&
       record.reason !== "group_rate_limit" &&
       record.reason !== "member_cooldown" &&
-      record.reason !== "chat_rate_limit" &&
       record.reason !== "group_budget")
   ) {
     throw new AppError("storage_unavailable", "Durable Object reservation is invalid");

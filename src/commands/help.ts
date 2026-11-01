@@ -14,7 +14,7 @@ const HELP_ENTRIES: readonly HelpEntry[] = [
     aliases: ["chat", "聊天", "普通文本"],
     text:
       "普通文本聊天\n直接发送不以 / 开头且不是 ping 的文本，与流萤角色聊天。\n" +
-      "可附带文件；每名成员每 30 秒最多 5 次。",
+      "可附带文件。",
   },
   {
     aliases: ["/ds ask", "ds ask", "ask"],

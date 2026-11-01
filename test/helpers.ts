@@ -360,7 +360,6 @@ export function createHarness(options: {
                 windowStartedAt: 0,
                 windowCount: 0,
                 memberCooldowns: {},
-                chatMemberWindows: {},
                 budgetDay: new Date().toISOString().slice(0, 10),
                 budgetSpentNanoUsd: 0,
               },

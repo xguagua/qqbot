@@ -17,7 +17,6 @@ function groupState(): GroupGuardState {
       windowStartedAt: 0,
       windowCount: 0,
       memberCooldowns: {},
-      chatMemberWindows: {},
       budgetDay: "2026-10-25",
       budgetSpentNanoUsd: 0,
     },
@@ -87,22 +86,15 @@ describe("per-group guard", () => {
     expect(guard.state.budgetSpentNanoUsd).toBe(900);
   });
 
-  it("enforces five chat messages per member in a thirty-second window", () => {
+  it("does not impose a chat frequency limit", () => {
     const guard = groupState();
     const now = Date.parse("2026-10-25T10:00:00Z");
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 10; index += 1) {
       expect(guard.reserveChat("chat-member", 10, now + index)).toMatchObject({
         allowed: true,
       });
     }
-    expect(guard.reserveChat("chat-member", 10, now + 5)).toMatchObject({
-      allowed: false,
-      reason: "chat_rate_limit",
-    });
     expect(guard.reserveChat("other-member", 10, now + 6)).toMatchObject({
-      allowed: true,
-    });
-    expect(guard.reserveChat("chat-member", 10, now + 30_000)).toMatchObject({
       allowed: true,
     });
   });
@@ -110,17 +102,14 @@ describe("per-group guard", () => {
   it("keeps chat and /DS rate-limit counters independent", () => {
     const guard = groupState();
     const now = Date.parse("2026-10-25T10:00:00Z");
-    for (let index = 0; index < 4; index += 1) {
+    for (let index = 0; index < 5; index += 1) {
       expect(guard.reserveChat("member-1", 10, now + index).allowed).toBe(true);
     }
     expect(guard.reserveAsk("member-1", 10, now + 5)).toMatchObject({
       allowed: true,
     });
     expect(guard.reserveChat("member-1", 10, now + 6).allowed).toBe(true);
-    expect(guard.reserveChat("member-1", 10, now + 7)).toMatchObject({
-      allowed: false,
-      reason: "chat_rate_limit",
-    });
+    expect(guard.reserveChat("member-1", 10, now + 7).allowed).toBe(true);
   });
 });
 

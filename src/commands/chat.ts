@@ -14,8 +14,6 @@ import {
   MAX_OUTPUT_TOKENS,
   MAX_REPLY_CHARS,
   MAX_RESERVATION_NANO_USD,
-  CHAT_RATE_LIMIT,
-  CHAT_RATE_WINDOW_MS,
   AI_TIMEOUT_MS,
   ATTACHMENT_TIMEOUT_MS,
   type DeepSeekModel,
@@ -45,10 +43,8 @@ export interface ChatCommandDependencies {
 function deniedReply(
   result: ReservationResult,
 ): string {
-  if (result.reason === "group_budget") {
-    return "本群今日 AI 额度已用完，请稍后再试。";
-  }
-  return `请求过于频繁：每人 ${CHAT_RATE_WINDOW_MS / 1_000} 秒内最多发送 ${CHAT_RATE_LIMIT} 次聊天消息，请稍后再试。`;
+  void result;
+  return "本群今日 AI 额度已用完，请稍后再试。";
 }
 
 function upstreamFailureReply(error: unknown): string {
