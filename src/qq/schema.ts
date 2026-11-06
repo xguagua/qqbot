@@ -68,17 +68,43 @@ function parseAttachments(value: unknown): QQAttachment[] {
   });
 }
 
-function parseQuotedContent(value: unknown): string | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
+function collectMessageElementTexts(
+  value: unknown,
+  depth = 0,
+  result: string[] = [],
+): string[] {
+  if (!Array.isArray(value) || depth > 3) {
+    return result;
   }
   for (const item of value) {
     const element = asRecord(item);
-    if (element !== null && isNonEmptyString(element.content)) {
-      return element.content.trim().slice(0, MAX_QUOTED_CONTEXT_CHARS);
+    if (element === null) {
+      continue;
     }
+    if (isNonEmptyString(element.content)) {
+      const text = element.content.trim();
+      if (text.length > 0 && !result.includes(text)) {
+        result.push(text);
+      }
+    }
+    collectMessageElementTexts(element.msg_elements, depth + 1, result);
   }
-  return undefined;
+  return result;
+}
+
+function parseQuotedContent(value: unknown): string | undefined {
+  const texts = collectMessageElementTexts(value);
+  if (texts.length === 0) {
+    return undefined;
+  }
+  const perElementLimit = Math.max(
+    40,
+    Math.floor(MAX_QUOTED_CONTEXT_CHARS / texts.length),
+  );
+  return texts
+    .map((text) => text.slice(0, perElementLimit))
+    .join("\n---\n")
+    .slice(0, MAX_QUOTED_CONTEXT_CHARS);
 }
 
 function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {

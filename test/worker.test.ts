@@ -357,7 +357,33 @@ describe("Worker webhook flow", () => {
 
     expect(harness.ai.requests).toHaveLength(1);
     expect(harness.ai.requests[0]?.question).toContain("可以陪我聊聊吗？");
+    expect(harness.ai.requests[0]?.question).toContain("最后一段可能是用户新增正文");
     expect(harness.sender.messages[1]?.content).toContain("不能改变自己的角色");
+  });
+
+  it("keeps every msg_elements text when the current body follows the quote", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          messageId: "quoted-multiple-elements",
+          content: " ",
+          messageType: 103,
+          quotedContent: "被引用的原消息",
+        }),
+        {
+          elementContents: ["需要处理的当前具体内容"],
+        },
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.ai.requests).toHaveLength(1);
+    expect(harness.ai.requests[0]?.question).toContain("被引用的原消息");
+    expect(harness.ai.requests[0]?.question).toContain("需要处理的当前具体内容");
+    expect(harness.ai.requests[0]?.question).toContain("最后一段可能是用户新增正文");
   });
 
   it("keeps chat history isolated by group and member", async () => {

@@ -134,7 +134,7 @@ DeepSeek 文档目前写明：
 - 不要假设 `group_openid` 与真实 QQ 群号相同。
 - 不要假设 OpenID 在不同机器人或不同群之间可互换。
 - 处理文本、文本加顶层附件，以及附件-only 普通聊天；卡片和嵌套消息不进入主分支业务逻辑。
-- 接受 `message_type=0` 和引用消息 `message_type=103`；引用正文来自 `msg_elements[].content`，不得再因 `msg_elements` 非空而丢弃事件。
+- 接受 `message_type=0` 和引用消息 `message_type=103`；递归提取 `msg_elements` 中全部文本，不得只取第一段或因 `msg_elements` 非空而丢弃事件。
 - 正文解析前后都去除首尾空白，但保留用户问题内部空格。
 
 ## 7. Webhook 与签名

@@ -78,6 +78,7 @@ export async function signedEventRequest(
     secret?: string;
     timestamp?: string;
     appId?: string | null;
+    elementContents?: readonly string[];
   } = {},
 ): Promise<Request> {
   const payload = {
@@ -100,9 +101,15 @@ export async function signedEventRequest(
       timestamp: value.timestamp,
       message_type: value.messageType,
       msg_elements:
-        value.quotedContent === undefined
-          ? []
-          : [{ content: value.quotedContent, message_type: 103 }],
+        [
+          ...(value.quotedContent === undefined
+            ? []
+            : [{ content: value.quotedContent, message_type: 103 }]),
+          ...(options.elementContents ?? []).map((content) => ({
+            content,
+            message_type: 0,
+          })),
+        ],
     },
   };
   const raw = new TextEncoder().encode(JSON.stringify(payload));
