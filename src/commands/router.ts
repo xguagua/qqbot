@@ -11,7 +11,7 @@ export type ParsedCommand =
   | { kind: "ds_list"; field: "model" | "think" | "all" }
   | { kind: "help"; command: string }
   | { kind: "chat_setting"; enabled: boolean | null }
-  | { kind: "at_request"; message: string }
+  | { kind: "at_request"; message: string; mentionIds: readonly string[] }
   | { kind: "version" }
   | { kind: "invalid"; usage: "ask" | "set" | "ds" };
 
@@ -23,6 +23,9 @@ export const DS_USAGE =
 export const UNKNOWN_COMMAND_REPLY = "未知命令，请输入 /help 查询";
 
 export function parseCommand(rawContent: string): ParsedCommand | null {
+  const mentionIds = [...rawContent.matchAll(/<@!?([^>]+)>/g)]
+    .map((match) => match[1]?.trim() ?? "")
+    .filter((id) => id.length > 0);
   const content = rawContent
     .replace(/<@!?[^>]+>/g, "")
     .trim();
@@ -59,7 +62,7 @@ export function parseCommand(rawContent: string): ParsedCommand | null {
     if (message.length > MAX_AT_MESSAGE_CHARS) {
       return { kind: "invalid", usage: "ds" };
     }
-    return { kind: "at_request", message };
+    return { kind: "at_request", message, mentionIds };
   }
 
   if (/^\/version$/i.test(content)) {

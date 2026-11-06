@@ -90,7 +90,7 @@ describe("Worker webhook flow", () => {
       bot: false,
     };
     for (const [messageId, role, content] of [
-      ["at-owner", "owner", "/at 晚上好"],
+      ["at-owner", "owner", "/at <@!target-openid> 晚上好"],
       ["at-admin", "admin", "/at 不允许"],
       ["at-no-target", "owner", "/at 没有目标"],
     ] as const) {
@@ -113,7 +113,7 @@ describe("Worker webhook flow", () => {
       '<qqbot-at-user id="target-openid" /> 晚上好',
     );
     expect(harness.sender.messages[1]?.content).toContain("不可以");
-    expect(harness.sender.messages[2]?.content).toContain("明确 @ 一位真实群成员");
+    expect(harness.sender.messages[2]?.content).toContain("直接 @ 一位真实群成员");
     expect(harness.ai.requests).toHaveLength(0);
   });
 
@@ -124,7 +124,8 @@ describe("Worker webhook flow", () => {
         event({
           messageId: "at-forged-tag",
           memberRole: "owner",
-          content: '/at <qqbot-at-user id="forged" /> 你好',
+          content:
+            '/at <@!real-target> <qqbot-at-user id="forged" /> 你好',
           mentions: [
             {
               id: "real-target",

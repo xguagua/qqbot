@@ -77,14 +77,20 @@ describe("command routing", () => {
 
   it("routes version and owner at requests", () => {
     expect(parseCommand("/VERSION")).toEqual({ kind: "version" });
-    expect(parseCommand('/at <qqbot-at-user id="x" /> 你好')).toEqual({
+    expect(parseCommand('/at <@!target-id> 你好')).toEqual({
       kind: "at_request",
       message: "你好",
+      mentionIds: ["target-id"],
     });
-    expect(parseCommand("/at")).toEqual({ kind: "at_request", message: "" });
+    expect(parseCommand("/at")).toEqual({
+      kind: "at_request",
+      message: "",
+      mentionIds: [],
+    });
     expect(parseCommand('<@!target> /at 你好')).toEqual({
       kind: "at_request",
       message: "你好",
+      mentionIds: ["target"],
     });
   });
 

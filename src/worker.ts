@@ -193,7 +193,7 @@ async function commandReply(
     return handleChatSetting(event, command.enabled, dsDependencies(deps, runtime, event));
   }
   if (command.kind === "at_request") {
-    return handleAtRequest(event, command.message);
+    return handleAtRequest(event, command.message, command.mentionIds);
   }
   if (command.kind === "version") {
     return versionReply(runtime);

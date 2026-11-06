@@ -24,7 +24,7 @@ const HELP_ENTRIES: readonly HelpEntry[] = [
   {
     aliases: ["/at", "at"],
     text:
-      "/at [消息]\n群主在同一条消息中 @ 一位成员后，机器人会在回复中主动 @ 该成员。仅群主可用。",
+      "/at @成员 [消息]\n群主在 /at 后直接 @ 一位目标成员，可选附带消息；机器人会在回复中主动 @ 该成员。仅群主可用。",
   },
   {
     aliases: ["/version", "version"],
@@ -87,7 +87,7 @@ export function helpReply(command = ""): string {
       "ping — 健康检查，回复 pong",
       "普通文本 — 与流萤聊天，可附文件",
       "/chat [true|false] — 查询或调整本群聊天开关",
-      "/at [消息] — 群主要求机器人主动 @ 同消息中的一位成员",
+      "/at @成员 [消息] — 群主要求机器人主动 @ 直接指定的成员",
       "/version — 查看部署时间与 Git commit",
       "/help [Command] — 查看帮助",
       "/DS ask <问题> [附件] — 向 DeepSeek 提问",

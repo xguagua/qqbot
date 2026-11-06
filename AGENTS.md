@@ -55,7 +55,7 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 普通文本聊天，固定使用 `deepseek-flash` 非思考模式与内置流萤 System Prompt。
 - `/help [Command]`、`/DS list [model|think]`。
 - 管理员 `/chat [true|false]` 群聊天开关。
-- 群主 `/at [消息]` 主动 @ 同消息中的一位成员。
+- 群主 `/at @成员 [消息]` 主动 @ 直接指定的成员。
 - `/version` 部署版本信息。
 - 普通聊天与 `/DS ask` 的附件传递。
 - 每群配置、权限、限流、费用上限与最小审计。
@@ -365,7 +365,7 @@ pong
 
 ### 9.12 `/at`
 
-- 语法：`@Bot /at [消息]`，群主必须在同一条消息中 @ 唯一目标成员。
+- 语法：`@Bot /at @成员 [消息]`，群主必须在 `/at` 后直接 @ 唯一目标成员；消息可省略。
 - 目标来自可信事件 `mentions[].id`，不读取昵称，不使用正文中的 @ 标签。
 - 只允许 `member_role=owner`；管理员、白名单成员和普通成员均回复“不可以”。
 - 输出内容使用 `<qqbot-at-user id="TARGET_ID" />` 官方兼容标记。
