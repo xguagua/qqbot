@@ -1,6 +1,7 @@
 import type { AIClient } from "./ai/deepseek";
 import { DeepSeekClient } from "./ai/deepseek";
 import { handleChat, type ChatCommandDependencies } from "./commands/chat";
+import { handleAtRequest } from "./commands/at";
 import {
   handleDsAsk,
   handleDsClear,
@@ -12,6 +13,7 @@ import {
 } from "./commands/ds";
 import { helpReply } from "./commands/help";
 import { PING_REPLY } from "./commands/ping";
+import { versionReply } from "./commands/version";
 import { UNKNOWN_COMMAND_REPLY, parseCommand } from "./commands/router";
 import {
   loadRuntimeConfig,
@@ -189,6 +191,12 @@ async function commandReply(
   }
   if (command.kind === "chat_setting") {
     return handleChatSetting(event, command.enabled, dsDependencies(deps, runtime, event));
+  }
+  if (command.kind === "at_request") {
+    return handleAtRequest(event, command.message);
+  }
+  if (command.kind === "version") {
+    return versionReply(runtime);
   }
 
   const shared = dsDependencies(deps, runtime, event);

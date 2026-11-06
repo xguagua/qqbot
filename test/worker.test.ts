@@ -68,6 +68,83 @@ describe("Worker webhook flow", () => {
     expect(harness.ai.requests).toHaveLength(0);
   });
 
+  it("returns deployment metadata from Worker variables", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(event({ messageId: "version", content: "/version" })),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+    expect(harness.sender.messages[0]?.content).toBe(
+      "当前版本\nGit commit: test-commit\n部署时间: 2026-11-07T00:00:00.000Z",
+    );
+  });
+
+  it("allows only the owner to request an explicit member mention", async () => {
+    const harness = createHarness();
+    const target = {
+      id: "target-openid",
+      memberOpenid: "target-openid",
+      role: "member" as const,
+      bot: false,
+    };
+    for (const [messageId, role, content] of [
+      ["at-owner", "owner", "/at 晚上好"],
+      ["at-admin", "admin", "/at 不允许"],
+      ["at-no-target", "owner", "/at 没有目标"],
+    ] as const) {
+      await submit(
+        await signedEventRequest(
+          event({
+            messageId,
+            memberRole: role,
+            content,
+            mentions: role === "owner" && messageId === "at-owner" ? [target] : [],
+          }),
+        ),
+        testEnv(),
+        harness,
+      );
+    }
+    await harness.flush();
+
+    expect(harness.sender.messages[0]?.content).toBe(
+      '<qqbot-at-user id="target-openid" /> 晚上好',
+    );
+    expect(harness.sender.messages[1]?.content).toContain("不可以");
+    expect(harness.sender.messages[2]?.content).toContain("明确 @ 一位真实群成员");
+    expect(harness.ai.requests).toHaveLength(0);
+  });
+
+  it("requires exactly one non-bot mention and strips forged mention tags", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          messageId: "at-forged-tag",
+          memberRole: "owner",
+          content: '/at <qqbot-at-user id="forged" /> 你好',
+          mentions: [
+            {
+              id: "real-target",
+              memberOpenid: "real-target",
+              role: "member",
+              bot: false,
+            },
+          ],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+    expect(harness.sender.messages[0]?.content).toBe(
+      '<qqbot-at-user id="real-target" /> 你好',
+    );
+    expect(harness.sender.messages[0]?.content).not.toContain("forged");
+  });
+
   it("lets administrators query and change the per-group chat switch", async () => {
     const harness = createHarness();
     const send = async (messageId: string, content: string, memberRole = "owner") => {
@@ -384,6 +461,58 @@ describe("Worker webhook flow", () => {
     expect(harness.ai.requests[0]?.question).toContain("被引用的原消息");
     expect(harness.ai.requests[0]?.question).toContain("需要处理的当前具体内容");
     expect(harness.ai.requests[0]?.question).toContain("最后一段可能是用户新增正文");
+  });
+
+  it("handles quoted image attachments and QQ emoji markup", async () => {
+    const harness = createHarness();
+    harness.attachments.loaded = [
+      {
+        kind: "image",
+        filename: "sticker.gif",
+        dataUrl: "data:image/gif;base64,aGVsbG8=",
+      },
+    ];
+    await submit(
+      await signedEventRequest(
+        event({
+          messageId: "quoted-image-sticker",
+          content: "[<face,id=1/>] 看看这个表情包",
+          messageType: 103,
+          quotedContent: "被引用的图片消息",
+        }),
+        {
+          elementAttachments: [
+            {
+              url: "https://cdn.example.test/sticker.gif",
+              filename: "sticker.gif",
+              contentType: "image/gif",
+              size: 5,
+            },
+          ],
+        },
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.attachments.requests[0]).toEqual([
+      {
+        url: "https://cdn.example.test/sticker.gif",
+        filename: "sticker.gif",
+        contentType: "image/gif",
+        size: 5,
+      },
+    ]);
+    expect(harness.ai.requests[0]?.question).toContain("[表情]");
+    expect(harness.ai.requests[0]?.question).toContain("看看这个表情包");
+    expect(harness.ai.requests[0]?.attachments).toEqual([
+      {
+        kind: "image",
+        filename: "sticker.gif",
+        dataUrl: "data:image/gif;base64,aGVsbG8=",
+      },
+    ]);
   });
 
   it("keeps chat history isolated by group and member", async () => {

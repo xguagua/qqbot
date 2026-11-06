@@ -18,6 +18,7 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const MAX_QUERY_CHARS = 2_000;
 export const MAX_CHAT_INPUT_CHARS = 1_000;
 export const MAX_QUOTED_CONTEXT_CHARS = 600;
+export const MAX_AT_MESSAGE_CHARS = 500;
 export const MAX_SYSTEM_PROMPT_CHARS = 1_000;
 export const MAX_OUTPUT_TOKENS = 1_024;
 export const MAX_ESTIMATED_INPUT_TOKENS = 16_384;
@@ -49,6 +50,8 @@ export interface AppBindings {
   DS_MEMBER_COOLDOWN_SECONDS?: string;
   DS_GROUP_DAILY_BUDGET_NANO_USD?: string;
   DS_GLOBAL_DAILY_BUDGET_NANO_USD?: string;
+  GIT_COMMIT_SHA?: string;
+  DEPLOYED_AT?: string;
 }
 
 export type Env = AppBindings;
@@ -62,6 +65,8 @@ export interface RuntimeConfig {
   memberCooldownMs: number;
   groupDailyBudgetNanoUsd: number;
   globalDailyBudgetNanoUsd: number;
+  gitCommitSha: string;
+  deployedAt: string;
 }
 
 export interface GroupGuardLimits {
@@ -140,6 +145,8 @@ export function loadRuntimeConfig(env: AppBindings): RuntimeConfig {
     adminWhitelist: parseAdminWhitelist(env.ADMIN_WHITELIST),
     ...guardLimits,
     globalDailyBudgetNanoUsd,
+    gitCommitSha: env.GIT_COMMIT_SHA?.trim() || "unknown",
+    deployedAt: env.DEPLOYED_AT?.trim() || "unknown",
   };
 }
 

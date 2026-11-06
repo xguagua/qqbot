@@ -75,6 +75,19 @@ describe("command routing", () => {
     expect(parseCommand("/chat false")).toEqual({ kind: "chat_setting", enabled: false });
   });
 
+  it("routes version and owner at requests", () => {
+    expect(parseCommand("/VERSION")).toEqual({ kind: "version" });
+    expect(parseCommand('/at <qqbot-at-user id="x" /> 你好')).toEqual({
+      kind: "at_request",
+      message: "你好",
+    });
+    expect(parseCommand("/at")).toEqual({ kind: "at_request", message: "" });
+    expect(parseCommand('<@!target> /at 你好')).toEqual({
+      kind: "at_request",
+      message: "你好",
+    });
+  });
+
   it("reports malformed DS commands", () => {
     expect(parseCommand("/ds wat")).toEqual({ kind: "invalid", usage: "ds" });
     expect(parseCommand("/ds set unknown value")).toEqual({

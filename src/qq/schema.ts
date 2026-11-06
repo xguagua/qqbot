@@ -17,6 +17,13 @@ export interface QQAttachment {
   size: number | undefined;
 }
 
+export interface MentionedGroupMember {
+  id: string;
+  memberOpenid: string | undefined;
+  role: MemberRole | undefined;
+  bot: boolean;
+}
+
 export interface GroupAtMessageEvent {
   kind: "event";
   messageId: string;
@@ -27,6 +34,7 @@ export interface GroupAtMessageEvent {
   messageType: 0 | 103;
   quotedContent: string | undefined;
   attachments: readonly QQAttachment[];
+  mentions: readonly MentionedGroupMember[];
   timestamp: string;
   timestampMs: number;
 }
@@ -40,32 +48,66 @@ function parseChallenge(d: Record<string, unknown>): ChallengePayload {
   return { kind: "challenge", plainToken: d.plain_token, eventTs: d.event_ts };
 }
 
-function parseAttachments(value: unknown): QQAttachment[] {
-  if (value === undefined) {
-    return [];
-  }
-  if (!Array.isArray(value)) {
+function normalizeMessageText(value: string): string {
+  return value
+    .replace(/\[<face,id=\d+\/?>]/g, "[表情]")
+    .replace(/<faceType=\d+,[^>]+>/g, "[表情]")
+    .trim();
+}
+
+function parseAttachmentItem(item: unknown): QQAttachment {
+  const attachment = asRecord(item);
+  if (attachment === null || !isNonEmptyString(attachment.url)) {
     throw new AppError("invalid_request", "Invalid attachments", 400);
   }
-  return value.map((item) => {
-    const attachment = asRecord(item);
-    if (attachment === null || !isNonEmptyString(attachment.url)) {
-      throw new AppError("invalid_request", "Invalid attachment", 400);
-    }
-    return {
-      url: attachment.url,
-      filename: isNonEmptyString(attachment.filename) ? attachment.filename : undefined,
-      contentType: isNonEmptyString(attachment.content_type)
-        ? attachment.content_type
+  return {
+    url: attachment.url,
+    filename: isNonEmptyString(attachment.filename) ? attachment.filename : undefined,
+    contentType: isNonEmptyString(attachment.content_type)
+      ? attachment.content_type
+      : undefined,
+    size:
+      typeof attachment.size === "number" &&
+      Number.isSafeInteger(attachment.size) &&
+      attachment.size > 0
+        ? attachment.size
         : undefined,
-      size:
-        typeof attachment.size === "number" &&
-        Number.isSafeInteger(attachment.size) &&
-        attachment.size > 0
-          ? attachment.size
-          : undefined,
-    };
-  });
+  };
+}
+
+function collectMessageElementAttachments(
+  value: unknown,
+  depth = 0,
+  result: QQAttachment[] = [],
+): QQAttachment[] {
+  if (!Array.isArray(value) || depth > 3) {
+    return result;
+  }
+  for (const item of value) {
+    const element = asRecord(item);
+    if (element === null) {
+      continue;
+    }
+    if (Array.isArray(element.attachments)) {
+      result.push(...element.attachments.map(parseAttachmentItem));
+    }
+    collectMessageElementAttachments(element.msg_elements, depth + 1, result);
+  }
+  return result;
+}
+
+function parseAttachments(topLevel: unknown, elements: unknown): QQAttachment[] {
+  if (topLevel !== undefined && !Array.isArray(topLevel)) {
+    throw new AppError("invalid_request", "Invalid attachments", 400);
+  }
+  const attachments = [
+    ...(Array.isArray(topLevel) ? topLevel.map(parseAttachmentItem) : []),
+    ...collectMessageElementAttachments(elements),
+  ];
+  return attachments.filter(
+    (attachment, index) =>
+      attachments.findIndex((candidate) => candidate.url === attachment.url) === index,
+  );
 }
 
 function collectMessageElementTexts(
@@ -82,7 +124,7 @@ function collectMessageElementTexts(
       continue;
     }
     if (isNonEmptyString(element.content)) {
-      const text = element.content.trim();
+      const text = normalizeMessageText(element.content);
       if (text.length > 0 && !result.includes(text)) {
         result.push(text);
       }
@@ -90,6 +132,37 @@ function collectMessageElementTexts(
     collectMessageElementTexts(element.msg_elements, depth + 1, result);
   }
   return result;
+}
+
+function parseMentions(value: unknown): MentionedGroupMember[] {
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new AppError("invalid_request", "Invalid mentions", 400);
+  }
+  const mentions: MentionedGroupMember[] = [];
+  for (const item of value) {
+    const mention = asRecord(item);
+    if (mention === null || !isNonEmptyString(mention.id)) {
+      continue;
+    }
+    const role =
+      mention.member_role === "member" ||
+      mention.member_role === "admin" ||
+      mention.member_role === "owner"
+        ? mention.member_role
+        : undefined;
+    mentions.push({
+      id: mention.id,
+      memberOpenid: isNonEmptyString(mention.member_openid)
+        ? mention.member_openid
+        : undefined,
+      role,
+      bot: mention.bot === true,
+    });
+  }
+  return mentions;
 }
 
 function parseQuotedContent(value: unknown): string | undefined {
@@ -154,10 +227,11 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
     groupOpenid: data.group_openid,
     memberOpenid: author.member_openid,
     memberRole: role,
-    content: data.content,
+    content: normalizeMessageText(data.content),
     messageType: data.message_type,
     quotedContent: parseQuotedContent(data.msg_elements),
-    attachments: parseAttachments(data.attachments),
+    attachments: parseAttachments(data.attachments, data.msg_elements),
+    mentions: parseMentions(data.mentions),
     timestamp: data.timestamp,
     timestampMs,
   };

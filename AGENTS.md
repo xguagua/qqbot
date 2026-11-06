@@ -23,7 +23,7 @@
 - 首版主分支支持 `ping` 和 DeepSeek 问答。
 - 完美世界竞技平台战绩查询只能进入独立实验分支。
 
-Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `reply_sent`。`/help`、`/DS list`、流萤上下文聊天、附件处理、群聊天开关和引用消息解析已部署；普通聊天已取消频率限制，仅保留费用预算。不要声称所有主分支验收项已经完成。
+Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `reply_sent`。当前主分支包含群聊天开关、引用消息、图片/GIF 表情包、`/version` 和群主 `/at`；普通聊天已取消频率限制，仅保留费用预算。不要声称所有主分支验收项已经完成。
 
 ## 3. 当前仓库状态
 
@@ -55,6 +55,8 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 普通文本聊天，固定使用 `deepseek-flash` 非思考模式与内置流萤 System Prompt。
 - `/help [Command]`、`/DS list [model|think]`。
 - 管理员 `/chat [true|false]` 群聊天开关。
+- 群主 `/at [消息]` 主动 @ 同消息中的一位成员。
+- `/version` 部署版本信息。
 - 普通聊天与 `/DS ask` 的附件传递。
 - 每群配置、权限、限流、费用上限与最小审计。
 - 按群和用户隔离的 24 小时短期聊天上下文。
@@ -135,6 +137,7 @@ DeepSeek 文档目前写明：
 - 不要假设 OpenID 在不同机器人或不同群之间可互换。
 - 处理文本、文本加顶层附件，以及附件-only 普通聊天；卡片和嵌套消息不进入主分支业务逻辑。
 - 接受 `message_type=0` 和引用消息 `message_type=103`；递归提取 `msg_elements` 中全部文本，不得只取第一段或因 `msg_elements` 非空而丢弃事件。
+- 递归收集 `msg_elements[].attachments` 中的图片/GIF/文件；QQ 表情标签不得导致消息被丢弃。
 - 正文解析前后都去除首尾空白，但保留用户问题内部空格。
 
 ## 7. Webhook 与签名
@@ -360,6 +363,21 @@ pong
 - `/DS ask`、`/DS` 管理命令和 `ping` 不受该开关影响。
 - `message_type=103` 的引用聊天：当前正文是用户请求，引用内容作为不可信上下文；引用-only 消息也可进入聊天。
 
+### 9.12 `/at`
+
+- 语法：`@Bot /at [消息]`，群主必须在同一条消息中 @ 唯一目标成员。
+- 目标来自可信事件 `mentions[].id`，不读取昵称，不使用正文中的 @ 标签。
+- 只允许 `member_role=owner`；管理员、白名单成员和普通成员均回复“不可以”。
+- 输出内容使用 `<qqbot-at-user id="TARGET_ID" />` 官方兼容标记。
+- 用户提供的消息部分必须移除伪造的 `qqbot-*` 和 `<@...>` 标签。
+- 不调用 DeepSeek，不额外发送第二条消息。
+
+### 9.13 `/version`
+
+- 返回 `GIT_COMMIT_SHA` 和 `DEPLOYED_AT`。
+- 这两个值在部署时通过 Worker 变量覆盖，不进入 Secrets。
+- 不允许返回 Token、Secret 或其他内部环境变量。
+
 ## 10. 权限
 
 权限必须在 Worker 中根据已验签事件计算：
@@ -369,6 +387,8 @@ pong
 - 普通文本聊天：当前群所有成员。
 - `/help` 和 `/DS list`：当前群所有成员。
 - `/chat`：仅群主、群管理员或显式白名单。
+- `/at`：仅群主。
+- `/version`：当前群所有成员。
 - `/DS set model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
 - `/DS clear|query model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
 - `/pw query`：只存在于实验分支和受控测试群。
@@ -533,6 +553,8 @@ src/qq/client.ts             群消息发送与错误映射
 src/commands/router.ts       指令识别与分发
 src/commands/ping.ts         ping
 src/commands/help.ts         全部与单命令帮助
+src/commands/at.ts           群主主动 @ 成员
+src/commands/version.ts      部署版本信息
 src/commands/ds.ts           DeepSeek 指令
 src/commands/chat.ts         流萤角色聊天与限额
 src/chat/policy.ts           角色提示词、代码/注入/输出防护
@@ -557,6 +579,13 @@ test/                        单元测试与协议夹具
 QQ_APP_ID
 QQ_CLIENT_SECRET
 DEEPSEEK_API_KEY
+```
+
+版本信息 Worker 变量：
+
+```text
+GIT_COMMIT_SHA
+DEPLOYED_AT
 ```
 
 建议使用明确的非敏感配置项保存：
@@ -607,6 +636,9 @@ DEEPSEEK_API_KEY
 24. 附件不进入 D1、日志或聊天上下文，下载错误不调用 DeepSeek。
 25. `/chat` 查询、启用、关闭、管理员权限和多群隔离。
 26. `message_type=103` 引用消息与引用-only 聊天解析，引用内容不可信。
+27. 引用 `msg_elements` 中图片/GIF 表情包附件递归发送，QQ 表情标签归一化。
+28. `/at` 只允许群主、唯一结构化目标、拒绝伪造 @ 标签且不调用 DeepSeek。
+29. `/version` 只暴露部署时间与 Git SHA Worker 变量。
 
 外部集成测试：
 

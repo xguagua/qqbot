@@ -9,6 +9,7 @@ import type { Logger, LogFields } from "../src/log";
 import type {
   GroupAtMessageEvent,
   MemberRole,
+  MentionedGroupMember,
   QQAttachment,
 } from "../src/qq/schema";
 import { signWebhookPayload } from "../src/qq/verify";
@@ -50,6 +51,8 @@ export function testEnv(overrides: Partial<Env> = {}): Env {
     DS_MEMBER_COOLDOWN_SECONDS: "30",
     DS_GROUP_DAILY_BUDGET_NANO_USD: "100000000",
     DS_GLOBAL_DAILY_BUDGET_NANO_USD: "5000000000",
+    GIT_COMMIT_SHA: "test-commit",
+    DEPLOYED_AT: "2026-11-07T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -66,6 +69,7 @@ export function event(overrides: Partial<GroupAtMessageEvent> = {}): GroupAtMess
     messageType: 0,
     quotedContent: undefined,
     attachments: [],
+    mentions: [],
     timestamp: now.toISOString(),
     timestampMs: now.getTime(),
     ...overrides,
@@ -79,6 +83,7 @@ export async function signedEventRequest(
     timestamp?: string;
     appId?: string | null;
     elementContents?: readonly string[];
+    elementAttachments?: readonly QQAttachment[];
   } = {},
 ): Promise<Request> {
   const payload = {
@@ -98,6 +103,12 @@ export async function signedEventRequest(
         content_type: attachment.contentType,
         size: attachment.size,
       })),
+      mentions: value.mentions.map((mention) => ({
+        id: mention.id,
+        member_openid: mention.memberOpenid,
+        member_role: mention.role,
+        bot: mention.bot,
+      })),
       timestamp: value.timestamp,
       message_type: value.messageType,
       msg_elements:
@@ -108,6 +119,18 @@ export async function signedEventRequest(
           ...(options.elementContents ?? []).map((content) => ({
             content,
             message_type: 0,
+          })),
+          ...(options.elementAttachments ?? []).map((attachment) => ({
+            content: "",
+            message_type: 0,
+            attachments: [
+              {
+                url: attachment.url,
+                filename: attachment.filename,
+                content_type: attachment.contentType,
+                size: attachment.size,
+              },
+            ],
           })),
         ],
     },

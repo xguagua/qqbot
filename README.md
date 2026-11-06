@@ -11,6 +11,8 @@ Cloudflare Worker 实现的 QQ 官方机器人主分支。它只处理群内 `@�
 - 管理员 `/DS query <model|think|spm>`
 - `/help [Command]` 与 `/DS list [model|think]`
 - 管理员 `/chat [true|false]` 查询或调整群聊天开关
+- `/version` 返回部署时间与 Git commit
+- 群主 `/at [消息]` 主动 @ 同消息中指定的一位成员
 - 普通文本：以流萤角色进行按用户隔离的短期聊天
 - 普通聊天和 `/DS ask` 支持附带文件
 
@@ -18,9 +20,9 @@ Cloudflare Worker 实现的 QQ 官方机器人主分支。它只处理群内 `@�
 
 ## 当前状态
 
-主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 已部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。`/help`、`/DS list`、流萤上下文聊天、聊天/DS 附件处理、群聊天开关和引用消息解析已部署；普通聊天已取消频率限制，仅保留费用预算。
+主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。当前主分支包含流萤上下文聊天、聊天/DS 附件、图片与 GIF 表情包、群聊天开关、引用消息、`/version` 和群主 `/at`。
 
-工作区中的 `.git` 仍是占位目录；本项目没有初始化或操作 Git 仓库。
+本地 Git 仓库的 `main` 跟踪 `origin/main`；按具体任务要求执行提交与推送。
 
 部署教程可按以下路径阅读：
 
@@ -61,16 +63,44 @@ QQ Webhook
 - 普通聊天和 `/DS ask` 会下载当前消息附件并以 DeepSeek `image_url`/`file` 内容片段发送；附件不写入 D1。
 - 普通聊天使用群级 `chat_enabled` 开关；关闭后普通文本与附件聊天不调用 DeepSeek，但 `/DS` 命令不受影响。
 - QQ 引用消息 `message_type=103` 会递归提取 `msg_elements` 中全部文本（不只是第一段），作为不可信上下文与当前消息一起发送。
+- 引用元素中的嵌套图片和 GIF 表情包附件会被收集并发送给 DeepSeek；QQ 表情标签归一化为 `[表情]`。
 
 ## 附件处理
 
-- 每条消息最多 3 个附件。
+- 每条消息最多 3 个附件，包括顶层和引用 `msg_elements` 中的图片/文件。
 - 单文件上限 4 MB，附件总大小上限 8 MB。
 - 只接受 HTTPS、标准 443 端口，并拒绝 localhost、私网 IP 和带用户凭据的 URL。
 - 图片使用 `image_url` 片段，其他文件使用 `file` 与 base64 `file_data` 片段。
 - 附件只在当前 Worker 请求内存中处理，不写入 D1、日志或聊天上下文。
 - 附件下载总超时 5 秒；带附件请求会缩短 DeepSeek 响应超时，为 QQ 被动回复留余量。
 - 附件内容按不可信输入处理，不能改变角色、系统规则或绕过代码限制。
+
+## 主动 @ 成员
+
+只有群主可以要求机器人主动 @ 一位成员。必须在同一条消息中通过 QQ 的 @ 功能选择唯一目标，再发送：
+
+```text
+@Bot /at [要发送的文字]
+```
+
+机器人使用官方 `<qqbot-at-user id="..." />` 标记回复。目标来自可信事件 `mentions[].id`，不使用昵称；普通成员、管理员以及正文中伪造的 @ 标签都不能授权。
+
+## 版本信息
+
+`/version` 返回 Worker 环境变量中的：
+
+- `GIT_COMMIT_SHA`
+- `DEPLOYED_AT`
+
+`wrangler.toml` 仅保存 `unknown` 占位值。部署时应覆盖为实际值：
+
+```bash
+pnpm exec wrangler deploy \
+  --strict \
+  --domain qqbot.xguagua.cc.cd \
+  --var "GIT_COMMIT_SHA:$(git rev-parse HEAD)" \
+  --var "DEPLOYED_AT:$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
 
 ## 服务端硬限制
 

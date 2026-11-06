@@ -1,3 +1,5 @@
+import { MAX_AT_MESSAGE_CHARS } from "../config";
+
 export type DSConfigField = "model" | "think" | "spm";
 
 export type ParsedCommand =
@@ -9,6 +11,8 @@ export type ParsedCommand =
   | { kind: "ds_list"; field: "model" | "think" | "all" }
   | { kind: "help"; command: string }
   | { kind: "chat_setting"; enabled: boolean | null }
+  | { kind: "at_request"; message: string }
+  | { kind: "version" }
   | { kind: "invalid"; usage: "ask" | "set" | "ds" };
 
 export const DS_USAGE =
@@ -19,7 +23,9 @@ export const DS_USAGE =
 export const UNKNOWN_COMMAND_REPLY = "未知命令，请输入 /help 查询";
 
 export function parseCommand(rawContent: string): ParsedCommand | null {
-  const content = rawContent.trim();
+  const content = rawContent
+    .replace(/<@!?[^>]+>/g, "")
+    .trim();
   if (content.length === 0) {
     return null;
   }
@@ -42,6 +48,22 @@ export function parseCommand(rawContent: string): ParsedCommand | null {
       return { kind: "chat_setting", enabled: value === "true" };
     }
     return { kind: "invalid", usage: "ds" };
+  }
+
+  const atRequest = /^\/at(?:\s+([\s\S]*))?$/i.exec(content);
+  if (atRequest !== null) {
+    const message = (atRequest[1] ?? "")
+      .replace(/<qqbot-[^>]*>/gi, "")
+      .replace(/<@!?[^>]+>/g, "")
+      .trim();
+    if (message.length > MAX_AT_MESSAGE_CHARS) {
+      return { kind: "invalid", usage: "ds" };
+    }
+    return { kind: "at_request", message };
+  }
+
+  if (/^\/version$/i.test(content)) {
+    return { kind: "version" };
   }
 
   const ask = /^\/ds\s+ask(?:\s+([\s\S]*))?$/i.exec(content);

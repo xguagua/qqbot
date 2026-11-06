@@ -22,6 +22,15 @@ const HELP_ENTRIES: readonly HelpEntry[] = [
       "/chat [true|false]\n查询或调整当前群聊天功能。省略参数时查询状态。仅管理员可用。",
   },
   {
+    aliases: ["/at", "at"],
+    text:
+      "/at [消息]\n群主在同一条消息中 @ 一位成员后，机器人会在回复中主动 @ 该成员。仅群主可用。",
+  },
+  {
+    aliases: ["/version", "version"],
+    text: "/version\n返回当前 Worker 的部署时间和 Git commit ID。",
+  },
+  {
     aliases: ["/ds ask", "ds ask", "ask"],
     text:
       "/DS ask <问题> [附件]\n调用当前群配置的 DeepSeek 模型问答；可附带文件。\n" +
@@ -78,6 +87,8 @@ export function helpReply(command = ""): string {
       "ping — 健康检查，回复 pong",
       "普通文本 — 与流萤聊天，可附文件",
       "/chat [true|false] — 查询或调整本群聊天开关",
+      "/at [消息] — 群主要求机器人主动 @ 同消息中的一位成员",
+      "/version — 查看部署时间与 Git commit",
       "/help [Command] — 查看帮助",
       "/DS ask <问题> [附件] — 向 DeepSeek 提问",
       "/DS set model|think|spm <值> — 修改本群配置",
