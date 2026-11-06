@@ -365,3 +365,32 @@ export function handleDsList(field: "model" | "think" | "all"): string {
   }
   return `${modelLine}\n${thinkLine}`;
 }
+
+export async function handleChatSetting(
+  event: GroupAtMessageEvent,
+  enabled: boolean | null,
+  deps: DSCommandDependencies,
+): Promise<string> {
+  if (!canManageGroup(event, deps.adminWhitelist)) {
+    return PERMISSION_DENIED_REPLY;
+  }
+
+  if (enabled === null) {
+    let config: GroupConfig;
+    try {
+      config = await deps.configRepository.get(event.groupOpenid);
+    } catch {
+      return "读取本群聊天状态失败，请稍后再试。";
+    }
+    return config.chatEnabled ? "本群聊天功能：已启用" : "本群聊天功能：已关闭";
+  }
+
+  try {
+    await deps.configRepository.update(event.groupOpenid, event.memberOpenid, {
+      chatEnabled: enabled,
+    });
+  } catch {
+    return "更新本群聊天状态失败，请稍后再试。";
+  }
+  return enabled ? "已启用本群聊天功能。" : "已关闭本群聊天功能。";
+}

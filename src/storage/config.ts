@@ -17,17 +17,23 @@ export interface GroupConfig {
   model: DeepSeekModel;
   reasoningEffort: ReasoningEffort;
   systemPrompt: string;
+  chatEnabled: boolean;
   updatedByOpenid: string;
   updatedAt: string;
   version: number;
 }
 
-export type ConfigField = "model" | "reasoning_effort" | "system_prompt";
+export type ConfigField =
+  | "model"
+  | "reasoning_effort"
+  | "system_prompt"
+  | "chat_enabled";
 
 export interface GroupConfigChanges {
   model?: DeepSeekModel;
   reasoningEffort?: ReasoningEffort;
   systemPrompt?: string;
+  chatEnabled?: boolean;
 }
 
 export interface ConfigRepository {
@@ -45,6 +51,7 @@ interface GroupConfigRow {
   model: string;
   reasoning_effort: string;
   system_prompt: string;
+  chat_enabled: number;
   updated_by_openid: string;
   updated_at: string;
   version: number;
@@ -67,6 +74,7 @@ export function defaultGroupConfig(groupOpenid: string): GroupConfig {
     model: DEFAULT_MODEL,
     reasoningEffort: DEFAULT_REASONING_EFFORT,
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    chatEnabled: true,
     updatedByOpenid: "",
     updatedAt: "",
     version: 0,
@@ -83,6 +91,7 @@ function parseConfigRow(row: unknown, expectedGroupOpenid: string): GroupConfig 
     typeof record.system_prompt !== "string" ||
     record.system_prompt.length === 0 ||
     record.system_prompt.length > MAX_SYSTEM_PROMPT_CHARS ||
+    (record.chat_enabled !== 0 && record.chat_enabled !== 1) ||
     typeof record.updated_by_openid !== "string" ||
     typeof record.updated_at !== "string" ||
     typeof record.version !== "number" ||
@@ -97,6 +106,7 @@ function parseConfigRow(row: unknown, expectedGroupOpenid: string): GroupConfig 
     model: record.model,
     reasoningEffort: record.reasoning_effort,
     systemPrompt: record.system_prompt,
+    chatEnabled: record.chat_enabled === 1,
     updatedByOpenid: record.updated_by_openid,
     updatedAt: record.updated_at,
     version: record.version,
@@ -114,6 +124,9 @@ function changedFields(changes: GroupConfigChanges): ConfigField[] {
   if (changes.systemPrompt !== undefined) {
     fields.push("system_prompt");
   }
+  if (changes.chatEnabled !== undefined) {
+    fields.push("chat_enabled");
+  }
   return fields;
 }
 
@@ -123,6 +136,7 @@ function applyChanges(config: GroupConfig, changes: GroupConfigChanges): GroupCo
     model: changes.model ?? config.model,
     reasoningEffort: changes.reasoningEffort ?? config.reasoningEffort,
     systemPrompt: changes.systemPrompt ?? config.systemPrompt,
+    chatEnabled: changes.chatEnabled ?? config.chatEnabled,
   };
 }
 
@@ -140,7 +154,7 @@ export class D1ConfigRepository implements ConfigRepository {
       const row = await this.#db
         .prepare(
           "SELECT group_openid, model, reasoning_effort, system_prompt, " +
-            "updated_by_openid, updated_at, version FROM group_configs " +
+            "chat_enabled, updated_by_openid, updated_at, version FROM group_configs " +
             "WHERE group_openid = ?",
         )
         .bind(groupOpenid)
@@ -173,11 +187,12 @@ export class D1ConfigRepository implements ConfigRepository {
     const update = this.#db
       .prepare(
         "INSERT INTO group_configs " +
-          "(group_openid, model, reasoning_effort, system_prompt, updated_by_openid, " +
-          "updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?) " +
+          "(group_openid, model, reasoning_effort, system_prompt, chat_enabled, " +
+          "updated_by_openid, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
           "ON CONFLICT(group_openid) DO UPDATE SET " +
           "model = excluded.model, reasoning_effort = excluded.reasoning_effort, " +
-          "system_prompt = excluded.system_prompt, updated_by_openid = excluded.updated_by_openid, " +
+          "system_prompt = excluded.system_prompt, chat_enabled = excluded.chat_enabled, " +
+          "updated_by_openid = excluded.updated_by_openid, " +
           "updated_at = excluded.updated_at, version = excluded.version " +
           "WHERE group_configs.version = ?",
       )
@@ -186,6 +201,7 @@ export class D1ConfigRepository implements ConfigRepository {
         next.model,
         next.reasoningEffort,
         next.systemPrompt,
+        next.chatEnabled ? 1 : 0,
         actorMemberOpenid,
         updatedAt,
         nextVersion,

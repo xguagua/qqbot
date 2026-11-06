@@ -69,6 +69,12 @@ describe("command routing", () => {
     });
   });
 
+  it("routes chat enable, disable, and status queries", () => {
+    expect(parseCommand("/chat")).toEqual({ kind: "chat_setting", enabled: null });
+    expect(parseCommand("/CHAT TRUE")).toEqual({ kind: "chat_setting", enabled: true });
+    expect(parseCommand("/chat false")).toEqual({ kind: "chat_setting", enabled: false });
+  });
+
   it("reports malformed DS commands", () => {
     expect(parseCommand("/ds wat")).toEqual({ kind: "invalid", usage: "ds" });
     expect(parseCommand("/ds set unknown value")).toEqual({
@@ -82,6 +88,7 @@ describe("command routing", () => {
       usage: "ds",
     });
     expect(parseCommand("/unknown")).toEqual({ kind: "invalid", usage: "ds" });
+    expect(parseCommand("/chat maybe")).toEqual({ kind: "invalid", usage: "ds" });
   });
 
   it("ignores unrelated messages", () => {

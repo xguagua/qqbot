@@ -63,6 +63,8 @@ export function event(overrides: Partial<GroupAtMessageEvent> = {}): GroupAtMess
     memberOpenid: "member-1",
     memberRole: "member",
     content: "ping",
+    messageType: 0,
+    quotedContent: undefined,
     attachments: [],
     timestamp: now.toISOString(),
     timestampMs: now.getTime(),
@@ -96,8 +98,11 @@ export async function signedEventRequest(
         size: attachment.size,
       })),
       timestamp: value.timestamp,
-      message_type: 0,
-      msg_elements: [],
+      message_type: value.messageType,
+      msg_elements:
+        value.quotedContent === undefined
+          ? []
+          : [{ content: value.quotedContent, message_type: 103 }],
     },
   };
   const raw = new TextEncoder().encode(JSON.stringify(payload));

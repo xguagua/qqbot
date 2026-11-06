@@ -23,7 +23,7 @@
 - 首版主分支支持 `ping` 和 DeepSeek 问答。
 - 完美世界竞技平台战绩查询只能进入独立实验分支。
 
-Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `reply_sent`。`/help`、`/DS list`、流萤上下文聊天及附件处理已部署；普通聊天已取消频率限制，仅保留费用预算。不要声称所有主分支验收项已经完成。
+Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `reply_sent`。`/help`、`/DS list`、流萤上下文聊天、附件处理、群聊天开关和引用消息解析已部署；普通聊天已取消频率限制，仅保留费用预算。不要声称所有主分支验收项已经完成。
 
 ## 3. 当前仓库状态
 
@@ -36,7 +36,7 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 当前 `.git` 仍是占位目录，`git status` 报告“不是 Git 仓库”。
 - 不要删除或覆盖 `.git`。
 - Cloudflare Worker 已部署到 `https://qqbot.xguagua.cc.cd`，远程 D1 与三个运行时 Secrets 已配置。
-- QQ Webhook 已收到真实 `GROUP_AT_MESSAGE_CREATE` 事件；`ping` 与 `/DS ask` 已通过线上日志确认。新增帮助、列表、流萤聊天和附件处理仍需真实测试群验收。
+- QQ Webhook 已收到真实 `GROUP_AT_MESSAGE_CREATE` 事件；`ping` 与 `/DS ask` 已通过线上日志确认。新增聊天开关和引用消息解析仍需真实测试群验收。
 - 离线单元测试、本地 D1 集成测试和线上 `op=13` 挑战响应检查已通过。
 
 若需要版本控制或分支操作，先确认仓库是否已经由用户初始化；仍不可用时向用户说明并请求下一步指示。
@@ -54,6 +54,7 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 管理员 `/DS clear model|think|spm` 和 `/DS query model|think|spm`。
 - 普通文本聊天，固定使用 `deepseek-flash` 非思考模式与内置流萤 System Prompt。
 - `/help [Command]`、`/DS list [model|think]`。
+- 管理员 `/chat [true|false]` 群聊天开关。
 - 普通聊天与 `/DS ask` 的附件传递。
 - 每群配置、权限、限流、费用上限与最小审计。
 - 按群和用户隔离的 24 小时短期聊天上下文。
@@ -133,6 +134,7 @@ DeepSeek 文档目前写明：
 - 不要假设 `group_openid` 与真实 QQ 群号相同。
 - 不要假设 OpenID 在不同机器人或不同群之间可互换。
 - 处理文本、文本加顶层附件，以及附件-only 普通聊天；卡片和嵌套消息不进入主分支业务逻辑。
+- 接受 `message_type=0` 和引用消息 `message_type=103`；引用正文来自 `msg_elements[].content`，不得再因 `msg_elements` 非空而丢弃事件。
 - 正文解析前后都去除首尾空白，但保留用户问题内部空格。
 
 ## 7. Webhook 与签名
@@ -330,7 +332,7 @@ pong
 ### 9.9 `/help` 与 `/DS list`
 
 - `/help` 返回全部命令帮助；`/help <Command>` 返回指定命令帮助。
-- 支持的帮助目标包括 `ping`、`chat`、`/DS ask`、`/DS set`、`/DS clear`、`/DS query`、`/DS list` 和 `/help`。
+- 支持的帮助目标包括 `ping`、普通文本聊天、`/chat`、`/DS ask`、`/DS set`、`/DS clear`、`/DS query`、`/DS list` 和 `/help`。
 - `/DS list model` 返回可用模型，`/DS list think` 返回思考等级，`/DS list` 同时返回两者。
 - `/help` 和 `/DS list` 对所有群成员开放，不调用 DeepSeek。
 - 未知斜杠命令或错误命令结构统一返回：`未知命令，请输入 /help 查询`。
@@ -347,6 +349,17 @@ pong
 - 附件内容是不可信输入，不能改变角色、权限、系统规则或代码限制。
 - 附件下载总超时为 5 秒；单次模型超时需为 QQ 被动回复窗口留出余量。
 
+### 9.11 `/chat`
+
+- `/chat` 查询当前群聊天开关。
+- `/chat true` 启用当前群普通文本聊天。
+- `/chat false` 关闭当前群普通文本聊天；关闭后普通文本和附件聊天不调用 DeepSeek。
+- 参数大小写不敏感，其他参数属于错误命令。
+- 仅允许群主、群管理员或显式白名单执行。
+- 开关按 `group_openid` 隔离，并写入版本化配置审计。
+- `/DS ask`、`/DS` 管理命令和 `ping` 不受该开关影响。
+- `message_type=103` 的引用聊天：当前正文是用户请求，引用内容作为不可信上下文；引用-only 消息也可进入聊天。
+
 ## 10. 权限
 
 权限必须在 Worker 中根据已验签事件计算：
@@ -355,6 +368,7 @@ pong
 - `/DS ask`：当前群所有成员。
 - 普通文本聊天：当前群所有成员。
 - `/help` 和 `/DS list`：当前群所有成员。
+- `/chat`：仅群主、群管理员或显式白名单。
 - `/DS set model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
 - `/DS clear|query model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
 - `/pw query`：只存在于实验分支和受控测试群。
@@ -405,6 +419,7 @@ group_openid
 model
 reasoning_effort
 system_prompt
+chat_enabled
 updated_by_openid
 updated_at
 version
@@ -590,6 +605,8 @@ DEEPSEEK_API_KEY
 22. 普通聊天与 `/DS ask` 的图片/文件附件被发送给 DeepSeek。
 23. 附件数量、单文件/总大小上限、HTTPS 与私网 URL 防护。
 24. 附件不进入 D1、日志或聊天上下文，下载错误不调用 DeepSeek。
+25. `/chat` 查询、启用、关闭、管理员权限和多群隔离。
+26. `message_type=103` 引用消息与引用-only 聊天解析，引用内容不可信。
 
 外部集成测试：
 

@@ -16,9 +16,11 @@ beforeAll(async () => {
   db = proxy.env.DB;
   dispose = proxy.dispose;
   const migrations = await Promise.all(
-    ["../../migrations/0001_initial.sql", "../../migrations/0002_chat_sessions.sql"].map(
-      (path) => readFile(new URL(path, import.meta.url), "utf8"),
-    ),
+    [
+      "../../migrations/0001_initial.sql",
+      "../../migrations/0002_chat_sessions.sql",
+      "../../migrations/0003_chat_enabled.sql",
+    ].map((path) => readFile(new URL(path, import.meta.url), "utf8")),
   );
   const statements = migrations
     .flatMap((migration) => migration.split(";"))
@@ -41,6 +43,7 @@ describe("D1 configuration repository", () => {
       groupOpenid: "integration-group-a",
       model: "deepseek-flash",
       reasoningEffort: "low",
+      chatEnabled: true,
       version: 0,
     });
 
@@ -50,12 +53,14 @@ describe("D1 configuration repository", () => {
       {
         model: "deepseek-v4-pro",
         systemPrompt: "PRIVATE_PROMPT_VALUE",
+        chatEnabled: false,
       },
     );
     expect(updated).toMatchObject({
       model: "deepseek-v4-pro",
       reasoningEffort: "low",
       systemPrompt: "PRIVATE_PROMPT_VALUE",
+      chatEnabled: false,
       updatedByOpenid: "integration-admin",
       version: 1,
     });
@@ -76,7 +81,7 @@ describe("D1 configuration repository", () => {
     expect(audit).toMatchObject({
       group_openid: "integration-group-a",
       actor_member_openid: "integration-admin",
-      changed_fields: "model,system_prompt",
+      changed_fields: "model,system_prompt,chat_enabled",
       previous_version: 0,
       new_version: 1,
     });

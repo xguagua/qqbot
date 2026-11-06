@@ -8,6 +8,7 @@ export type ParsedCommand =
   | { kind: "ds_query"; field: DSConfigField }
   | { kind: "ds_list"; field: "model" | "think" | "all" }
   | { kind: "help"; command: string }
+  | { kind: "chat_setting"; enabled: boolean | null }
   | { kind: "invalid"; usage: "ask" | "set" | "ds" };
 
 export const DS_USAGE =
@@ -29,6 +30,18 @@ export function parseCommand(rawContent: string): ParsedCommand | null {
   const help = /^\/help(?:\s+([\s\S]*))?$/i.exec(content);
   if (help !== null) {
     return { kind: "help", command: (help[1] ?? "").trim() };
+  }
+
+  const chatSetting = /^\/chat(?:\s+([\s\S]*))?$/i.exec(content);
+  if (chatSetting !== null) {
+    const value = (chatSetting[1] ?? "").trim().toLowerCase();
+    if (value === "") {
+      return { kind: "chat_setting", enabled: null };
+    }
+    if (value === "true" || value === "false") {
+      return { kind: "chat_setting", enabled: value === "true" };
+    }
+    return { kind: "invalid", usage: "ds" };
   }
 
   const ask = /^\/ds\s+ask(?:\s+([\s\S]*))?$/i.exec(content);

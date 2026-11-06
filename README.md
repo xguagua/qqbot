@@ -10,6 +10,7 @@ Cloudflare Worker 实现的 QQ 官方机器人主分支。它只处理群内 `@�
 - 管理员 `/DS clear <model|think|spm>`
 - 管理员 `/DS query <model|think|spm>`
 - `/help [Command]` 与 `/DS list [model|think]`
+- 管理员 `/chat [true|false]` 查询或调整群聊天开关
 - 普通文本：以流萤角色进行按用户隔离的短期聊天
 - 普通聊天和 `/DS ask` 支持附带文件
 
@@ -17,7 +18,7 @@ Cloudflare Worker 实现的 QQ 官方机器人主分支。它只处理群内 `@�
 
 ## 当前状态
 
-主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 已部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。`/help`、`/DS list`、流萤上下文聊天、聊天/DS 附件处理已部署；普通聊天已取消频率限制，仅保留费用预算。
+主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 已部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。`/help`、`/DS list`、流萤上下文聊天、聊天/DS 附件处理、群聊天开关和引用消息解析已部署；普通聊天已取消频率限制，仅保留费用预算。
 
 工作区中的 `.git` 仍是占位目录；本项目没有初始化或操作 Git 仓库。
 
@@ -58,6 +59,8 @@ QQ Webhook
 - 普通聊天不设置频率计数；仍受每群和全局费用预算约束。`/DS ask` 保持原有独立限流。
 - 代码编写/修改/调试请求和高置信度提示词注入不调用 DeepSeek；代码样式模型输出会再次拦截。
 - 普通聊天和 `/DS ask` 会下载当前消息附件并以 DeepSeek `image_url`/`file` 内容片段发送；附件不写入 D1。
+- 普通聊天使用群级 `chat_enabled` 开关；关闭后普通文本与附件聊天不调用 DeepSeek，但 `/DS` 命令不受影响。
+- QQ 引用消息 `message_type=103` 会提取 `msg_elements` 中的引用正文，作为不可信上下文与当前消息一起发送。
 
 ## 附件处理
 
@@ -235,11 +238,12 @@ pnpm exec wrangler d1 migrations apply qqbot --remote
 ```text
 0001_initial.sql
 0002_chat_sessions.sql
+0003_chat_enabled.sql
 ```
 
 该迁移创建：
 
-- `group_configs`：每群模型、思考强度、System Prompt、更新人和版本。
+- `group_configs`：每群模型、思考强度、System Prompt、聊天开关、更新人和版本。
 - `config_audits`：仅记录变更字段和版本，不复制完整 System Prompt。
 - `chat_sessions`：按群和用户保存 24 小时短期聊天上下文，只保留最近 8 条消息。
 - 审计与聊天过期时间查询索引。
@@ -461,6 +465,7 @@ pong
 ```text
 @机器人 /help
 @机器人 /help /DS query
+@机器人 /help /chat
 @机器人 /DS list model
 @机器人 /DS list think
 ```
@@ -470,6 +475,18 @@ pong
 ```text
 未知命令，请输入 /help 查询
 ```
+
+由管理员验证群聊天开关：
+
+```text
+@机器人 /chat
+@机器人 /chat false
+@机器人 这条普通聊天应被关闭提示拒绝
+@机器人 /DS ask /chat 关闭后 DS 仍应可用
+@机器人 /chat true
+```
+
+`/chat` 无参数查询状态；`true`/`false` 只影响当前群的普通聊天。
 
 #### 11.3 验证 `/DS ask`
 
@@ -507,6 +524,8 @@ pong
 - 要求忽略系统指令、改变角色或披露 Prompt 时直接拒绝。
 - 即使模型试图输出代码块，Worker 也会二次拦截。
 - 聊天附带图片或文件时会一并发送给 DeepSeek，且附件不会写入聊天上下文。
+- 引用一条群消息后发送聊天文本，Worker 应正常处理当前正文，并把引用内容作为不可信上下文。
+- 仅引用消息、不输入新正文时，也应能进入普通聊天。
 
 再测试 `/DS ask` 附件：
 
@@ -723,6 +742,7 @@ pnpm exec wrangler secret put QQ_CLIENT_SECRET
 - [ ] `wrangler.toml` 的 D1 `database_id` 已替换，不是占位符。
 - [ ] 远程 D1 迁移 `0001_initial.sql` 已应用。
 - [ ] 远程 D1 迁移 `0002_chat_sessions.sql` 已应用。
+- [ ] 远程 D1 迁移 `0003_chat_enabled.sql` 已应用。
 - [ ] `QQ_APP_ID`、`QQ_CLIENT_SECRET`、`DEEPSEEK_API_KEY` 已设置为 Secrets。
 - [ ] `wrangler secret list` 不显示任何 Secret 值。
 - [ ] Durable Object 两个类已随 Worker 首次部署成功创建。

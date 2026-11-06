@@ -7,6 +7,7 @@ import {
   handleDsList,
   handleDsQuery,
   handleDsSet,
+  handleChatSetting,
   type DSCommandDependencies,
 } from "./commands/ds";
 import { helpReply } from "./commands/help";
@@ -138,6 +139,7 @@ function chatDependencies(
   event: GroupAtMessageEvent,
 ): ChatCommandDependencies {
   return {
+    configRepository: deps.configRepository,
     chatRepository: deps.chatRepository,
     eventGuard: deps.eventGuard(event.groupOpenid),
     globalBudget: deps.globalBudget,
@@ -162,7 +164,8 @@ async function commandReply(
     const content = event.content.trim();
     if (
       (content.length > 0 && !content.startsWith("/")) ||
-      event.attachments.length > 0
+      event.attachments.length > 0 ||
+      (content.length === 0 && event.quotedContent !== undefined)
     ) {
       return handleChat(
         event,
@@ -183,6 +186,9 @@ async function commandReply(
   }
   if (command.kind === "ds_list") {
     return handleDsList(command.field);
+  }
+  if (command.kind === "chat_setting") {
+    return handleChatSetting(event, command.enabled, dsDependencies(deps, runtime, event));
   }
 
   const shared = dsDependencies(deps, runtime, event);

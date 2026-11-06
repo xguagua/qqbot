@@ -1,3 +1,4 @@
+import { MAX_QUOTED_CONTEXT_CHARS } from "../config";
 import { AppError } from "../errors";
 import { asRecord, isNonEmptyString, isString } from "../util";
 
@@ -23,6 +24,8 @@ export interface GroupAtMessageEvent {
   memberOpenid: string;
   memberRole: MemberRole;
   content: string;
+  messageType: 0 | 103;
+  quotedContent: string | undefined;
   attachments: readonly QQAttachment[];
   timestamp: string;
   timestampMs: number;
@@ -35,10 +38,6 @@ function parseChallenge(d: Record<string, unknown>): ChallengePayload {
     throw new AppError("invalid_request", "Invalid challenge payload", 400);
   }
   return { kind: "challenge", plainToken: d.plain_token, eventTs: d.event_ts };
-}
-
-function isEmptyArrayOrMissing(value: unknown): boolean {
-  return value === undefined || (Array.isArray(value) && value.length === 0);
 }
 
 function parseAttachments(value: unknown): QQAttachment[] {
@@ -67,6 +66,19 @@ function parseAttachments(value: unknown): QQAttachment[] {
           : undefined,
     };
   });
+}
+
+function parseQuotedContent(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  for (const item of value) {
+    const element = asRecord(item);
+    if (element !== null && isNonEmptyString(element.content)) {
+      return element.content.trim().slice(0, MAX_QUOTED_CONTEXT_CHARS);
+    }
+  }
+  return undefined;
 }
 
 function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
@@ -99,8 +111,7 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
   }
 
   if (
-    data.message_type !== 0 ||
-    !isEmptyArrayOrMissing(data.msg_elements) ||
+    (data.message_type !== 0 && data.message_type !== 103) ||
     (data.ark_data !== undefined && data.ark_data !== null)
   ) {
     return null;
@@ -118,6 +129,8 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
     memberOpenid: author.member_openid,
     memberRole: role,
     content: data.content,
+    messageType: data.message_type,
+    quotedContent: parseQuotedContent(data.msg_elements),
     attachments: parseAttachments(data.attachments),
     timestamp: data.timestamp,
     timestampMs,

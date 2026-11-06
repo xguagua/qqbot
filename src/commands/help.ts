@@ -11,10 +11,15 @@ const HELP_ENTRIES: readonly HelpEntry[] = [
     text: "ping\n健康检查。用法：ping，回复 pong。所有成员可用。",
   },
   {
-    aliases: ["chat", "聊天", "普通文本"],
+    aliases: ["roleplay", "聊天", "普通文本"],
     text:
       "普通文本聊天\n直接发送不以 / 开头且不是 ping 的文本，与流萤角色聊天。\n" +
       "可附带文件。",
+  },
+  {
+    aliases: ["/chat", "chat"],
+    text:
+      "/chat [true|false]\n查询或调整当前群聊天功能。省略参数时查询状态。仅管理员可用。",
   },
   {
     aliases: ["/ds ask", "ds ask", "ask"],
@@ -72,6 +77,7 @@ export function helpReply(command = ""): string {
       "",
       "ping — 健康检查，回复 pong",
       "普通文本 — 与流萤聊天，可附文件",
+      "/chat [true|false] — 查询或调整本群聊天开关",
       "/help [Command] — 查看帮助",
       "/DS ask <问题> [附件] — 向 DeepSeek 提问",
       "/DS set model|think|spm <值> — 修改本群配置",
