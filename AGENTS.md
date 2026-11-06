@@ -366,7 +366,7 @@ pong
 ### 9.12 `/at`
 
 - 语法：`@Bot /at @成员 [消息]`，群主必须在 `/at` 后直接 @ 唯一目标成员；消息可省略。
-- 目标来自可信事件 `mentions[].id`，不读取昵称，不使用正文中的 @ 标签。
+- 目标优先取 `/at` 后的 `<@!ID>`；若缺失，兼容 `<qqbot-at-user id="ID">`，再回退到唯一 `mentions[].id` 或 `member_openid`。
 - 只允许 `member_role=owner`；管理员、白名单成员和普通成员均回复“不可以”。
 - 输出内容使用 `<qqbot-at-user id="TARGET_ID" />` 官方兼容标记。
 - 用户提供的消息部分必须移除伪造的 `qqbot-*` 和 `<@...>` 标签。

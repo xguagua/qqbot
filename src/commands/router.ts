@@ -22,10 +22,25 @@ export const DS_USAGE =
 
 export const UNKNOWN_COMMAND_REPLY = "未知命令，请输入 /help 查询";
 
-export function parseCommand(rawContent: string): ParsedCommand | null {
-  const mentionIds = [...rawContent.matchAll(/<@!?([^>]+)>/g)]
+function extractMentionIds(rawContent: string): string[] {
+  const angleMentions = [...rawContent.matchAll(/<@!?([^>]+)>/g)]
     .map((match) => match[1]?.trim() ?? "")
     .filter((id) => id.length > 0);
+  if (angleMentions.length > 0) {
+    return [...new Set(angleMentions)];
+  }
+
+  return [
+    ...new Set(
+      [...rawContent.matchAll(/<qqbot-at-user\b[^>]*\bid=["']([^"']+)["'][^>]*>/gi)]
+        .map((match) => match[1]?.trim() ?? "")
+        .filter((id) => id.length > 0),
+    ),
+  ];
+}
+
+export function parseCommand(rawContent: string): ParsedCommand | null {
+  const mentionIds = extractMentionIds(rawContent);
   const content = rawContent
     .replace(/<@!?[^>]+>/g, "")
     .trim();

@@ -15,17 +15,16 @@ export function handleAtRequest(
   }
 
   const requestedTargetId =
-    mentionIds[0] ?? (availableTargets.length === 1 ? availableTargets[0]!.id : undefined);
-  const targets = availableTargets.filter((mention) => mention.id === requestedTargetId);
-  if (requestedTargetId === undefined || targets.length !== 1) {
+    mentionIds[0] ??
+    (availableTargets.length === 1 ? availableTargets[0]!.id : undefined);
+  if (requestedTargetId === undefined) {
     return "请在 /at 后直接 @ 一位真实群成员。";
   }
 
-  const target = targets[0]!;
-  if (!/^[A-Za-z0-9._~+/=-]+$/.test(target.id)) {
+  if (!/^[A-Za-z0-9._~+/=-]+$/.test(requestedTargetId)) {
     return "目标成员的标识无效，请重新 @ 后再试。";
   }
 
-  const mention = `<qqbot-at-user id="${target.id}" />`;
+  const mention = `<qqbot-at-user id="${requestedTargetId}" />`;
   return requestedMessage.length > 0 ? `${mention} ${requestedMessage}` : mention;
 }

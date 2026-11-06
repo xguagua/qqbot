@@ -92,6 +92,13 @@ describe("command routing", () => {
       message: "你好",
       mentionIds: ["target"],
     });
+    expect(
+      parseCommand('/at <qqbot-at-user id="content-target" /> 你好'),
+    ).toEqual({
+      kind: "at_request",
+      message: "你好",
+      mentionIds: ["content-target"],
+    });
   });
 
   it("reports malformed DS commands", () => {

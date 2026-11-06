@@ -144,7 +144,17 @@ function parseMentions(value: unknown): MentionedGroupMember[] {
   const mentions: MentionedGroupMember[] = [];
   for (const item of value) {
     const mention = asRecord(item);
-    if (mention === null || !isNonEmptyString(mention.id)) {
+    if (mention === null) {
+      continue;
+    }
+    const id = isNonEmptyString(mention.id)
+      ? mention.id
+      : isNonEmptyString(mention.member_openid)
+        ? mention.member_openid
+        : isNonEmptyString(mention.user_openid)
+          ? mention.user_openid
+          : undefined;
+    if (id === undefined) {
       continue;
     }
     const role =
@@ -154,7 +164,7 @@ function parseMentions(value: unknown): MentionedGroupMember[] {
         ? mention.member_role
         : undefined;
     mentions.push({
-      id: mention.id,
+      id,
       memberOpenid: isNonEmptyString(mention.member_openid)
         ? mention.member_openid
         : undefined,

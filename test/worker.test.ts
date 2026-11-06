@@ -146,6 +146,26 @@ describe("Worker webhook flow", () => {
     expect(harness.sender.messages[0]?.content).not.toContain("forged");
   });
 
+  it("uses the direct at marker when the mentions array is absent", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          messageId: "at-content-marker",
+          memberRole: "owner",
+          content: "/at <@!content-target> 这是发送的信息",
+          mentions: [],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+    expect(harness.sender.messages[0]?.content).toBe(
+      '<qqbot-at-user id="content-target" /> 这是发送的信息',
+    );
+  });
+
   it("lets administrators query and change the per-group chat switch", async () => {
     const harness = createHarness();
     const send = async (messageId: string, content: string, memberRole = "owner") => {
