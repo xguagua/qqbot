@@ -15,6 +15,7 @@ import { helpReply } from "./commands/help";
 import { PING_REPLY } from "./commands/ping";
 import { versionReply } from "./commands/version";
 import { UNKNOWN_COMMAND_REPLY, parseCommand } from "./commands/router";
+import type { CommandResult } from "./commands/types";
 import {
   loadRuntimeConfig,
   REPLY_WINDOW_MS,
@@ -160,7 +161,7 @@ async function commandReply(
   event: GroupAtMessageEvent,
   deps: WebhookDependencies,
   runtime: RuntimeConfig,
-): Promise<string | null> {
+): Promise<CommandResult | null> {
   const command = parseCommand(event.content);
   if (command === null) {
     const content = event.content.trim();
@@ -201,7 +202,10 @@ async function commandReply(
 
   const shared = dsDependencies(deps, runtime, event);
   if (command.kind === "ds_ask") {
-    return handleDsAsk(event, command.question, shared);
+    return {
+      content: await handleDsAsk(event, command.question, shared),
+      format: "markdown",
+    };
   }
   if (command.kind === "ds_clear") {
     return handleDsClear(event, command.field, shared);
@@ -214,15 +218,17 @@ async function commandReply(
 
 async function sendReply(
   event: GroupAtMessageEvent,
-  content: string,
+  reply: CommandResult,
   deps: WebhookDependencies,
 ): Promise<void> {
-  await deps.messageSender.sendText({
+  const content = typeof reply === "string" ? reply : reply.content;
+  await deps.messageSender.sendMessage({
     groupOpenid: event.groupOpenid,
     messageId: event.messageId,
     eventTimestampMs: event.timestampMs,
     content: truncateText(content, MAX_REPLY_CHARS),
     sequence: 1,
+    format: typeof reply === "string" ? "text" : reply.format,
   });
 }
 

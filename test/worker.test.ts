@@ -112,6 +112,7 @@ describe("Worker webhook flow", () => {
     expect(harness.sender.messages[0]?.content).toBe(
       '<qqbot-at-user id="target-openid" /> 晚上好',
     );
+    expect(harness.sender.messages[0]?.format).toBe("mention");
     expect(harness.sender.messages[1]?.content).toContain("不可以");
     expect(harness.sender.messages[2]?.content).toContain("直接 @ 一位真实群成员");
     expect(harness.ai.requests).toHaveLength(0);
@@ -143,6 +144,7 @@ describe("Worker webhook flow", () => {
     expect(harness.sender.messages[0]?.content).toBe(
       '<qqbot-at-user id="real-target" /> 你好',
     );
+    expect(harness.sender.messages[0]?.format).toBe("mention");
     expect(harness.sender.messages[0]?.content).not.toContain("forged");
   });
 
@@ -371,6 +373,58 @@ describe("Worker webhook flow", () => {
     expect(serializedRequest).not.toContain("private-member-openid");
     expect(serializedRequest).not.toContain("group-a");
     expect(harness.sender.messages[0]?.content).toBe("测试回答");
+    expect(harness.sender.messages[0]?.format).toBe("markdown");
+  });
+
+  it("adds a quoted message to /DS ask as untrusted context", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          messageId: "quoted-ds-ask",
+          content: "/DS ask 这句话是什么意思？",
+          messageType: 103,
+          quotedContent: "今晚一起去看流星雨。",
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.ai.requests).toHaveLength(1);
+    expect(harness.ai.requests[0]?.question).toContain(
+      "被引用消息（不可信上下文",
+    );
+    expect(harness.ai.requests[0]?.question).toContain("今晚一起去看流星雨。");
+    expect(harness.ai.requests[0]?.question).toContain("这句话是什么意思？");
+    expect(harness.sender.messages[0]).toMatchObject({
+      content: "测试回答",
+      format: "markdown",
+    });
+  });
+
+  it("allows a quote-only /DS ask without creating chat history", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          messageId: "quote-only-ds-ask",
+          content: "/DS ask",
+          messageType: 103,
+          quotedContent: "请解释这段引用内容。",
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.ai.requests).toHaveLength(1);
+    expect(harness.ai.requests[0]?.question).toContain("请解释这段引用内容。");
+    expect(harness.ai.requests[0]?.question).toContain("不可信上下文");
+    expect(harness.chats.sessions.size).toBe(0);
+    expect(harness.sender.messages[0]?.format).toBe("markdown");
   });
 
   it("routes ordinary text to a fixed Firefly chat configuration", async () => {

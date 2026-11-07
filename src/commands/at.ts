@@ -1,10 +1,11 @@
 import type { GroupAtMessageEvent } from "../qq/schema";
+import type { CommandResult } from "./types";
 
 export function handleAtRequest(
   event: GroupAtMessageEvent,
   requestedMessage: string,
   mentionIds: readonly string[] = [],
-): string {
+): CommandResult {
   if (event.memberRole !== "owner") {
     return "不可以：只有群主可以要求机器人主动 at 成员。";
   }
@@ -26,5 +27,9 @@ export function handleAtRequest(
   }
 
   const mention = `<qqbot-at-user id="${requestedTargetId}" />`;
-  return requestedMessage.length > 0 ? `${mention} ${requestedMessage}` : mention;
+  return {
+    content:
+      requestedMessage.length > 0 ? `${mention} ${requestedMessage}` : mention,
+    format: "mention",
+  };
 }

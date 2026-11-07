@@ -10,7 +10,8 @@ if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
 fi
 
 commit_sha="$(git rev-parse HEAD)"
-deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# 部署时间统一使用中国标准时间（UTC+8），并显式保留 +08:00 时区偏移。
+deployed_at="$(TZ=Asia/Shanghai date +%Y-%m-%dT%H:%M:%S)+08:00"
 
 if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
   echo "警告：工作区包含未提交或未跟踪的变更。" >&2

@@ -52,7 +52,7 @@ QQ Webhook
 
 - 验签使用原始 Body，正文为 `timestamp + rawBody`。
 - Ed25519 seed 由 `clientSecret` 重复扩展后截取 32 字节。
-- `/DS ask` 只发送当前问题和当前群 System Prompt，不发送昵称、OpenID、群 ID 或历史消息。
+- `/DS ask` 只发送当前问题、当前消息的引用上下文和当前群 System Prompt，不发送昵称、OpenID、群 ID 或历史消息。
 - 只使用 `reasoning_effort` 表达思考档位，不额外发送重叠的 `thinking` 参数。
 - 回复固定携带事件 `d.id` 作为 `msg_id`，单次指令只发送一条消息，`msg_seq` 为 1。
 - `/DS ask` 不保存上下文；普通文本聊天仅保存当前群、当前用户最近 8 条消息，24 小时后失效。
@@ -61,8 +61,9 @@ QQ Webhook
 - 普通聊天不设置频率计数；仍受每群和全局费用预算约束。`/DS ask` 保持原有独立限流。
 - 代码编写/修改/调试请求和高置信度提示词注入不调用 DeepSeek；代码样式模型输出会再次拦截。
 - 普通聊天和 `/DS ask` 会下载当前消息附件并以 DeepSeek `image_url`/`file` 内容片段发送；附件不写入 D1。
+- `/DS ask` 使用 QQ 原生 Markdown 消息返回模型最终内容。
 - 普通聊天使用群级 `chat_enabled` 开关；关闭后普通文本与附件聊天不调用 DeepSeek，但 `/DS` 命令不受影响。
-- QQ 引用消息 `message_type=103` 会递归提取 `msg_elements` 中全部文本（不只是第一段），作为不可信上下文与当前消息一起发送。
+- QQ 引用消息 `message_type=103` 会递归提取 `msg_elements` 中全部文本（不只是第一段）；普通聊天和 `/DS ask` 都会把引用内容作为不可信上下文与当前消息一起发送。
 - 引用元素中的嵌套图片和 GIF 表情包附件会被收集并发送给 DeepSeek；QQ 表情标签归一化为 `[表情]`。
 
 ## 附件处理
@@ -83,7 +84,7 @@ QQ Webhook
 @Bot /at @目标成员 [要发送的文字]
 ```
 
-机器人使用官方 `<qqbot-at-user id="..." />` 标记回复。目标优先匹配 `/at` 后的结构化 `<@!ID>` 标记，并兼容 `<qqbot-at-user id="..." />`；事件 `mentions[].id` 或 `member_openid` 用于交叉校验。官方文档这一用法也存在字段差异，因此不使用昵称授权；普通成员和管理员不能执行。
+机器人使用 `<qqbot-at-user id="..." />` 标记回复。QQ 要求单成员 @ 使用 `msg_type=2` 的特殊形态：标记和可选正文放在 `content`，而不是普通 `msg_type=0` 文本，也不是 `markdown.content`。目标优先匹配 `/at` 后的结构化 `<@!ID>` 标记，并兼容 `<qqbot-at-user id="..." />`；事件 `mentions[].id` 或 `member_openid` 用于交叉校验。官方文档这一用法仍有字段差异，因此不使用昵称授权；普通成员和管理员不能执行。
 
 ## 版本信息
 
@@ -95,12 +96,16 @@ QQ Webhook
 `wrangler.toml` 仅保存 `unknown` 占位值。部署时应覆盖为实际值：
 
 ```bash
+TZ=Asia/Shanghai
+DEPLOYED_AT="$(TZ=Asia/Shanghai date +%Y-%m-%dT%H:%M:%S)+08:00"
 pnpm exec wrangler deploy \
   --strict \
   --domain qqbot.xguagua.cc.cd \
   --var "GIT_COMMIT_SHA:$(git rev-parse HEAD)" \
-  --var "DEPLOYED_AT:$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  --var "DEPLOYED_AT:${DEPLOYED_AT}"
 ```
+
+`DEPLOYED_AT` 使用中国标准时间（UTC+8），并在值中显式附带 `+08:00`，避免只看到无时区时间时产生歧义。正常运行 `./deploy.sh` 会自动完成该处理。
 
 ## 服务端硬限制
 
@@ -524,7 +529,7 @@ pong
 @机器人 /DS ask 用一句话解释什么是 Cloudflare Worker
 ```
 
-预期在 QQ 被动回复窗口内返回 DeepSeek 的最终回答。首版无上下文，同一个群连续两次提问互相独立。
+预期在 QQ 被动回复窗口内以 Markdown 消息返回 DeepSeek 的最终回答。首版无上下文，同一个群连续两次提问互相独立。
 
 检查：
 
@@ -533,6 +538,8 @@ pong
 - 日志不出现问题正文或回答正文。
 - 默认模型为 `deepseek-flash`，默认思考强度为 `low`。
 - 达到每群、每人或预算限制后，不再调用 DeepSeek，并公开提示限额。
+- 引用一条群消息后发送 `/DS ask 请解释这条消息`，引用内容应作为不可信上下文传给 DeepSeek。
+- 只引用消息并发送 `/DS ask` 也应能提问，且不会写入普通聊天的 24 小时上下文。
 
 #### 11.4 验证流萤聊天、上下文与安全边界
 
@@ -806,3 +813,4 @@ pnpm exec wrangler secret put QQ_CLIENT_SECRET
 - `waitUntil` 不是持久队列。如果真实测试发现任务会被中断，应先记录证据，再获得用户同意后引入 Queues 或其他持久异步机制。
 - QQ 是否允许模型回答中的 URL 只能在测试群验证；发送失败会作为 QQ 业务错误记录，不会向群里回显上游详情。
 - Cloudflare Worker、远程 D1、QQ Webhook 和基础 `ping`/`DS ask` 已通过；聊天已取消频率限制，仅保留费用预算。
+- `/at` 的真实 @ 修复、`/DS ask` 引用上下文和 Markdown 返回已在离线测试中覆盖，部署后仍需测试群确认客户端展示与真实成员通知。

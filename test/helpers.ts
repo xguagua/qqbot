@@ -274,7 +274,7 @@ export class FakeAIClient implements AIClient {
 export class FakeMessageSender implements MessageSender {
   readonly messages: QQMessage[] = [];
 
-  async sendText(message: QQMessage): Promise<void> {
+  async sendMessage(message: QQMessage): Promise<void> {
     this.messages.push(message);
   }
 }

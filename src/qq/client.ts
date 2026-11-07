@@ -9,10 +9,13 @@ export interface QQMessage {
   eventTimestampMs: number;
   content: string;
   sequence: number;
+  format?: QQMessageFormat;
 }
 
+export type QQMessageFormat = "text" | "markdown" | "mention";
+
 export interface MessageSender {
-  sendText(message: QQMessage): Promise<void>;
+  sendMessage(message: QQMessage): Promise<void>;
 }
 
 export interface QQApiClientOptions {
@@ -39,7 +42,7 @@ export class QQApiClient implements MessageSender {
     this.#baseUrl = options.baseUrl ?? "https://api.bot.qq.com";
   }
 
-  async sendText(message: QQMessage): Promise<void> {
+  async sendMessage(message: QQMessage): Promise<void> {
     if (
       this.#now() - message.eventTimestampMs >
       REPLY_WINDOW_MS - REPLY_WINDOW_SAFETY_MS
@@ -57,6 +60,23 @@ export class QQApiClient implements MessageSender {
     const token = await this.#tokens.getAccessToken();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.#timeoutMs);
+    const format = message.format ?? "text";
+    const body =
+      format === "markdown"
+        ? {
+            msg_type: 2,
+            markdown: {
+              content: message.content,
+            },
+            msg_id: message.messageId,
+            msg_seq: message.sequence,
+          }
+        : {
+            msg_type: format === "mention" ? 2 : 0,
+            content: message.content,
+            msg_id: message.messageId,
+            msg_seq: message.sequence,
+          };
     let response: Response;
     try {
       response = await this.#fetch(
@@ -67,12 +87,7 @@ export class QQApiClient implements MessageSender {
             authorization: `QQBot ${token}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify({
-            msg_type: 0,
-            content: message.content,
-            msg_id: message.messageId,
-            msg_seq: message.sequence,
-          }),
+          body: JSON.stringify(body),
           signal: controller.signal,
         },
       );

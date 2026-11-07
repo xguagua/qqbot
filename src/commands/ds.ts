@@ -16,6 +16,7 @@ import {
 } from "../config";
 import type { AIClient } from "../ai/deepseek";
 import { actualRequestCost, estimateMaxRequestCost } from "../ai/pricing";
+import { questionWithQuotedContext } from "../chat/context";
 import type { AttachmentLoader, LoadedAttachment } from "../files/attachments";
 import type { DSConfigField } from "./router";
 import { UNKNOWN_COMMAND_REPLY } from "./router";
@@ -95,15 +96,19 @@ export async function handleDsAsk(
   deps: DSCommandDependencies,
 ): Promise<string> {
   const hasAttachments = event.attachments.length > 0;
+  const quotedMessage = event.quotedContent?.trim();
   if (question.length === 0) {
-    if (!hasAttachments) {
+    if (!hasAttachments && quotedMessage === undefined) {
       return UNKNOWN_COMMAND_REPLY;
     }
-    question = "请阅读并分析这个附件。";
+    if (quotedMessage === undefined) {
+      question = "请阅读并分析这个附件。";
+    }
   }
   if (question.length > MAX_QUERY_CHARS) {
     return `问题过长，请控制在 ${MAX_QUERY_CHARS} 字以内。`;
   }
+  question = questionWithQuotedContext(question, quotedMessage, hasAttachments);
 
   let config: GroupConfig;
   try {

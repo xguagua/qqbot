@@ -33,7 +33,7 @@ const HELP_ENTRIES: readonly HelpEntry[] = [
   {
     aliases: ["/ds ask", "ds ask", "ask"],
     text:
-      "/DS ask <问题> [附件]\n调用当前群配置的 DeepSeek 模型问答；可附带文件。\n" +
+      "/DS ask <问题> [附件]\n调用当前群配置的 DeepSeek 模型问答；可附带文件或引用消息，回答以 Markdown 消息返回。\n" +
       "所有成员可用，受群限流和费用上限约束。",
   },
   {
@@ -90,7 +90,7 @@ export function helpReply(command = ""): string {
       "/at @成员 [消息] — 群主要求机器人主动 @ 直接指定的成员",
       "/version — 查看部署时间与 Git commit",
       "/help [Command] — 查看帮助",
-      "/DS ask <问题> [附件] — 向 DeepSeek 提问",
+      "/DS ask <问题> [附件] — 向 DeepSeek 提问，可引用消息，以 Markdown 返回",
       "/DS set model|think|spm <值> — 修改本群配置",
       "/DS clear model|think|spm — 恢复本群配置默认值",
       "/DS query model|think|spm — 查询本群配置",

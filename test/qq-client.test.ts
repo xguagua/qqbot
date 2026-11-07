@@ -124,7 +124,7 @@ describe("QQ message client", () => {
       },
     });
 
-    await client.sendText({
+    await client.sendMessage({
       groupOpenid: "group/openid",
       messageId: "message-id",
       eventTimestampMs: 999,
@@ -152,7 +152,7 @@ describe("QQ message client", () => {
         }),
     });
     await expect(
-      client.sendText({
+      client.sendMessage({
         groupOpenid: "group",
         messageId: "message",
         eventTimestampMs: Date.now(),
@@ -176,7 +176,7 @@ describe("QQ message client", () => {
       },
     });
     await expect(
-      client.sendText({
+      client.sendMessage({
         groupOpenid: "group",
         messageId: "message",
         eventTimestampMs: 0,
@@ -195,7 +195,7 @@ describe("QQ message client", () => {
       },
     });
     await expect(
-      client.sendText({
+      client.sendMessage({
         groupOpenid: "group",
         messageId: "message",
         eventTimestampMs: Date.now(),
@@ -203,5 +203,59 @@ describe("QQ message client", () => {
         sequence: 1,
       }),
     ).rejects.toMatchObject({ code: "upstream_unavailable" });
+  });
+
+  it("sends Markdown through the dedicated markdown field", async () => {
+    let body: unknown;
+    const client = new QQApiClient({
+      tokens,
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({ id: "reply-id" }), { status: 200 });
+      },
+    });
+
+    await client.sendMessage({
+      groupOpenid: "group",
+      messageId: "message",
+      eventTimestampMs: Date.now(),
+      content: "## 回答\n\n**重点**",
+      sequence: 2,
+      format: "markdown",
+    });
+
+    expect(body).toEqual({
+      msg_type: 2,
+      markdown: { content: "## 回答\n\n**重点**" },
+      msg_id: "message",
+      msg_seq: 2,
+    });
+  });
+
+  it("uses QQ's Markdown content form for member mentions", async () => {
+    let body: unknown;
+    const client = new QQApiClient({
+      tokens,
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({ id: "reply-id" }), { status: 200 });
+      },
+    });
+
+    await client.sendMessage({
+      groupOpenid: "group",
+      messageId: "message",
+      eventTimestampMs: Date.now(),
+      content: '<qqbot-at-user id="target" /> 你好',
+      sequence: 3,
+      format: "mention",
+    });
+
+    expect(body).toEqual({
+      msg_type: 2,
+      content: '<qqbot-at-user id="target" /> 你好',
+      msg_id: "message",
+      msg_seq: 3,
+    });
   });
 });
