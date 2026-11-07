@@ -1,5 +1,6 @@
 export interface LogFields {
   outcome: string;
+  eventType?: string;
   code?: string;
   detail?: string;
   durationMs?: number;

@@ -241,6 +241,7 @@ async function processEvent(
   if (deps.now() - event.timestampMs > REPLY_WINDOW_MS - REPLY_WINDOW_SAFETY_MS) {
     deps.logger.info({
       outcome: "reply_window_expired",
+      eventType: event.eventType,
       durationMs: deps.now() - startedAt,
     });
     return;
@@ -250,6 +251,7 @@ async function processEvent(
     if (reply === null) {
       deps.logger.info({
         outcome: "ignored_command",
+        eventType: event.eventType,
         durationMs: deps.now() - startedAt,
       });
       return;
@@ -257,6 +259,7 @@ async function processEvent(
     await sendReply(event, reply, deps);
     deps.logger.info({
       outcome: "reply_sent",
+      eventType: event.eventType,
       durationMs: deps.now() - startedAt,
     });
   } catch (error) {
@@ -264,6 +267,7 @@ async function processEvent(
     deps.logger.error({
       outcome: "event_failed",
       code: errorCode(error),
+      eventType: event.eventType,
       ...(detail === undefined ? {} : { detail }),
       durationMs: deps.now() - startedAt,
     });
@@ -274,6 +278,7 @@ async function processEvent(
       deps.logger.error({
         outcome: "error_reply_failed",
         code: errorCode(replyError),
+        eventType: event.eventType,
         ...(replyDetail === undefined ? {} : { detail: replyDetail }),
       });
     }
@@ -331,7 +336,10 @@ export async function handleWebhook(
   const guard = deps.eventGuard(payload.groupOpenid);
   const claimed = await guard.claimEvent(payload.messageId);
   if (!claimed) {
-    deps.logger.info({ outcome: "duplicate_event" });
+    deps.logger.info({
+      outcome: "duplicate_event",
+      eventType: payload.eventType,
+    });
     return jsonResponse({ op: 12 });
   }
 

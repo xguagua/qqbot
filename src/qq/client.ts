@@ -62,7 +62,7 @@ export class QQApiClient implements MessageSender {
     const timer = setTimeout(() => controller.abort(), this.#timeoutMs);
     const format = message.format ?? "text";
     const body =
-      format === "markdown"
+      format === "markdown" || format === "mention"
         ? {
             msg_type: 2,
             markdown: {
@@ -72,7 +72,7 @@ export class QQApiClient implements MessageSender {
             msg_seq: message.sequence,
           }
         : {
-            msg_type: format === "mention" ? 2 : 0,
+            msg_type: 0,
             content: message.content,
             msg_id: message.messageId,
             msg_seq: message.sequence,

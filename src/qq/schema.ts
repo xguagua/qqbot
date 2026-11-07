@@ -22,10 +22,12 @@ export interface MentionedGroupMember {
   memberOpenid: string | undefined;
   role: MemberRole | undefined;
   bot: boolean;
+  isYou?: boolean;
 }
 
 export interface GroupAtMessageEvent {
   kind: "event";
+  eventType: "GROUP_AT_MESSAGE_CREATE" | "GROUP_MESSAGE_CREATE";
   messageId: string;
   groupOpenid: string;
   memberOpenid: string;
@@ -134,6 +136,10 @@ function collectMessageElementTexts(
   return result;
 }
 
+function parseBooleanFlag(value: unknown): boolean {
+  return value === true || value === "true";
+}
+
 function parseMentions(value: unknown): MentionedGroupMember[] {
   if (value === undefined) {
     return [];
@@ -169,7 +175,8 @@ function parseMentions(value: unknown): MentionedGroupMember[] {
         ? mention.member_openid
         : undefined,
       role,
-      bot: mention.bot === true,
+      bot: parseBooleanFlag(mention.bot),
+      isYou: parseBooleanFlag(mention.is_you),
     });
   }
   return mentions;
@@ -191,7 +198,7 @@ function parseQuotedContent(value: unknown): string | undefined {
 }
 
 function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
-  if (t !== "GROUP_AT_MESSAGE_CREATE") {
+  if (t !== "GROUP_AT_MESSAGE_CREATE" && t !== "GROUP_MESSAGE_CREATE") {
     return null;
   }
 
@@ -231,8 +238,17 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
     throw new AppError("invalid_request", "Invalid event timestamp", 400);
   }
 
+  const mentions = parseMentions(data.mentions);
+  if (
+    t === "GROUP_MESSAGE_CREATE" &&
+    !mentions.some((mention) => mention.isYou)
+  ) {
+    return null;
+  }
+
   return {
     kind: "event",
+    eventType: t,
     messageId: data.id,
     groupOpenid: data.group_openid,
     memberOpenid: author.member_openid,
@@ -241,7 +257,7 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
     messageType: data.message_type,
     quotedContent: parseQuotedContent(data.msg_elements),
     attachments: parseAttachments(data.attachments, data.msg_elements),
-    mentions: parseMentions(data.mentions),
+    mentions,
     timestamp: data.timestamp,
     timestampMs,
   };

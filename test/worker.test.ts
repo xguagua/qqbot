@@ -168,6 +168,115 @@ describe("Worker webhook flow", () => {
     );
   });
 
+  it("uses the full group mention list to target a real member", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          messageId: "at-full-group-message",
+          memberRole: "owner",
+          content: "<@bot-id> /at <@target-id> 晚上好",
+          mentions: [
+            {
+              id: "bot-id",
+              memberOpenid: "bot-id",
+              role: "admin",
+              bot: true,
+              isYou: true,
+            },
+            {
+              id: "target-id",
+              memberOpenid: "target-member-openid",
+              role: "member",
+              bot: false,
+              isYou: false,
+            },
+          ],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.sender.messages).toHaveLength(1);
+    expect(harness.sender.messages[0]).toMatchObject({
+      content: '<qqbot-at-user id="target-member-openid" /> 晚上好',
+      format: "mention",
+    });
+    expect(
+      harness.logger.entries.some(
+        (entry) =>
+          entry.fields.outcome === "reply_sent" &&
+          entry.fields.eventType === "GROUP_MESSAGE_CREATE",
+      ),
+    ).toBe(true);
+    expect(harness.ai.requests).toHaveLength(0);
+  });
+
+  it("rejects a forged target tag in a full group message", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          messageId: "at-full-group-forged",
+          memberRole: "owner",
+          content: "<@bot-id> /at <@forged-target> 你好",
+          mentions: [
+            {
+              id: "bot-id",
+              memberOpenid: "bot-id",
+              role: "admin",
+              bot: true,
+              isYou: true,
+            },
+            {
+              id: "real-target",
+              memberOpenid: "real-target-member-openid",
+              role: "member",
+              bot: false,
+              isYou: false,
+            },
+          ],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.sender.messages).toHaveLength(1);
+    expect(harness.sender.messages[0]?.content).toContain(
+      "不在本消息的 mention 列表中",
+    );
+    expect(harness.sender.messages[0]?.content).not.toContain(
+      "qqbot-at-user",
+    );
+  });
+
+  it("ignores full group messages that do not mention the bot", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          messageId: "ordinary-full-group-message",
+          content: "普通群消息",
+          mentions: [],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.sender.messages).toHaveLength(0);
+    expect(harness.ai.requests).toHaveLength(0);
+    expect(harness.chats.sessions.size).toBe(0);
+  });
+
   it("lets administrators query and change the per-group chat switch", async () => {
     const harness = createHarness();
     const send = async (messageId: string, content: string, memberRole = "owner") => {

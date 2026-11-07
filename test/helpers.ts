@@ -61,6 +61,7 @@ export function event(overrides: Partial<GroupAtMessageEvent> = {}): GroupAtMess
   const now = new Date();
   return {
     kind: "event",
+    eventType: "GROUP_AT_MESSAGE_CREATE",
     messageId: "message-1",
     groupOpenid: "group-a",
     memberOpenid: "member-1",
@@ -88,7 +89,7 @@ export async function signedEventRequest(
 ): Promise<Request> {
   const payload = {
     op: 0,
-    t: "GROUP_AT_MESSAGE_CREATE",
+    t: value.eventType,
     d: {
       id: value.messageId,
       group_openid: value.groupOpenid,
@@ -108,6 +109,7 @@ export async function signedEventRequest(
         member_openid: mention.memberOpenid,
         member_role: mention.role,
         bot: mention.bot,
+        is_you: mention.isYou,
       })),
       timestamp: value.timestamp,
       message_type: value.messageType,

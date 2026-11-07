@@ -20,7 +20,7 @@ Cloudflare Worker 实现的 QQ 官方机器人主分支。它只处理群内 `@�
 
 ## 当前状态
 
-主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。当前主分支包含流萤上下文聊天、聊天/DS 附件、图片与 GIF 表情包、群聊天开关、引用消息、`/version` 和群主 `/at`。
+主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。当前主分支包含流萤上下文聊天、聊天/DS 附件、图片与 GIF 表情包、群聊天开关、引用消息、`/version` 和群主 `/at`；群主授权全部群消息后，Worker 可使用 `GROUP_MESSAGE_CREATE` 的完整 mention 列表识别 `/at` 目标。
 
 本地 Git 仓库的 `main` 跟踪 `origin/main`；按具体任务要求执行提交与推送。
 
@@ -65,6 +65,7 @@ QQ Webhook
 - 普通聊天使用群级 `chat_enabled` 开关；关闭后普通文本与附件聊天不调用 DeepSeek，但 `/DS` 命令不受影响。
 - QQ 引用消息 `message_type=103` 会递归提取 `msg_elements` 中全部文本（不只是第一段）；普通聊天和 `/DS ask` 都会把引用内容作为不可信上下文与当前消息一起发送。
 - 引用元素中的嵌套图片和 GIF 表情包附件会被收集并发送给 DeepSeek；QQ 表情标签归一化为 `[表情]`。
+- `GROUP_MESSAGE_CREATE` 只有在 `mentions` 中存在 `is_you=true` 的机器人提及时才会进入业务逻辑；其他全量群消息不调用模型、不写上下文、不回复。
 
 ## 附件处理
 
@@ -84,7 +85,16 @@ QQ Webhook
 @Bot /at @目标成员 [要发送的文字]
 ```
 
-机器人使用 `<qqbot-at-user id="..." />` 标记回复。QQ 要求单成员 @ 使用 `msg_type=2` 的特殊形态：标记和可选正文放在 `content`，而不是普通 `msg_type=0` 文本，也不是 `markdown.content`。目标优先匹配 `/at` 后的结构化 `<@!ID>` 标记，并兼容 `<qqbot-at-user id="..." />`；事件 `mentions[].id` 或 `member_openid` 用于交叉校验。官方文档这一用法仍有字段差异，因此不使用昵称授权；普通成员和管理员不能执行。
+机器人使用 `<qqbot-at-user id="..." />` 标记回复。QQ 要求单成员 @ 使用 Markdown 消息：`msg_type=2`，标记和可选正文放在 `markdown.content`，目标 ID 使用该成员的 `member_openid`。群 @ 事件会裁掉同一条消息中对其他成员的 @，因此群主必须先完成下面的平台设置，让 Worker 通过 `GROUP_MESSAGE_CREATE` 获得完整 `mentions`：
+
+1. 用群主账号在手机 QQ 打开目标群。
+2. 点击机器人头像进入机器人设置。
+3. 打开“机器人可获取的群聊消息范围”。
+4. 选择“获取群内全部消息”。
+5. 在 QQ 开放平台的事件订阅/Webhook 配置中同时启用群消息事件 `GROUP_MESSAGE_CREATE`；如果控制台按事件名勾选，保留 `GROUP_AT_MESSAGE_CREATE`，并勾选“群消息（全量模式）”。
+6. 保存后重新进入群聊；权限变更可能需要重新打开群或等待配置生效。
+
+Worker 只处理 `mentions[].is_you=true` 的 `GROUP_MESSAGE_CREATE`，并要求 `/at` 目标与唯一的非机器人、非 `is_you` mention 交叉校验。发送时使用目标的 `member_openid`，不用昵称或 QQ 号。普通群消息会被忽略，不会进入聊天、DeepSeek、D1 或群回复。
 
 ## 版本信息
 
@@ -572,6 +582,14 @@ pong
 
 发送时附上 1 个不超过限制的图片或文件，预期 DeepSeek 能结合附件回答。
 
+测试 `/at` 前先确认机器人消息范围已经切换为“获取群内全部消息”，然后在测试群执行：
+
+```text
+@机器人 /at @目标成员 这是一条主动提及测试
+```
+
+预期只发送一条被动回复，目标是真实群成员并收到 @ 通知。Worker 日志应显示机器人被 @ 的 `GROUP_MESSAGE_CREATE` 进入业务处理；普通全量群消息不会产生 `reply_sent`。
+
 #### 11.5 验证去重和被动回复
 
 平台的相同事件可能重复投递。正常情况下，相同 `d.id` 只会对应一次 DeepSeek 请求和一次业务回复；重复投递应记录为 `duplicate_event`，不会再次消耗模型额度。
@@ -813,4 +831,4 @@ pnpm exec wrangler secret put QQ_CLIENT_SECRET
 - `waitUntil` 不是持久队列。如果真实测试发现任务会被中断，应先记录证据，再获得用户同意后引入 Queues 或其他持久异步机制。
 - QQ 是否允许模型回答中的 URL 只能在测试群验证；发送失败会作为 QQ 业务错误记录，不会向群里回显上游详情。
 - Cloudflare Worker、远程 D1、QQ Webhook 和基础 `ping`/`DS ask` 已通过；聊天已取消频率限制，仅保留费用预算。
-- `/at` 的真实 @ 修复、`/DS ask` 引用上下文和 Markdown 返回已在离线测试中覆盖，部署后仍需测试群确认客户端展示与真实成员通知。
+- `/at` 的完整 mention 解析、真实 @ 请求格式、`/DS ask` 引用上下文和 Markdown 返回已在离线测试中覆盖；部署后仍需群主切换消息范围并确认客户端 @ 通知。

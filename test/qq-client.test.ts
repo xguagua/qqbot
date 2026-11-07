@@ -232,7 +232,7 @@ describe("QQ message client", () => {
     });
   });
 
-  it("uses QQ's Markdown content form for member mentions", async () => {
+  it("sends member mentions in the official Markdown field", async () => {
     let body: unknown;
     const client = new QQApiClient({
       tokens,
@@ -253,7 +253,7 @@ describe("QQ message client", () => {
 
     expect(body).toEqual({
       msg_type: 2,
-      content: '<qqbot-at-user id="target" /> 你好',
+      markdown: { content: '<qqbot-at-user id="target" /> 你好' },
       msg_id: "message",
       msg_seq: 3,
     });

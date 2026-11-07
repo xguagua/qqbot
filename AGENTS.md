@@ -38,7 +38,7 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 当前 `.git` 仍是占位目录，`git status` 报告“不是 Git 仓库”。
 - 不要删除或覆盖 `.git`。
 - Cloudflare Worker 已部署到 `https://qqbot.xguagua.cc.cd`，远程 D1 与三个运行时 Secrets 已配置。
-- QQ Webhook 已收到真实 `GROUP_AT_MESSAGE_CREATE` 事件；`ping` 与 `/DS ask` 已通过线上日志确认。新增聊天开关和引用消息解析仍需真实测试群验收。
+- QQ Webhook 已收到真实 `GROUP_AT_MESSAGE_CREATE` 事件；`ping` 与 `/DS ask` 已通过线上日志确认。`GROUP_MESSAGE_CREATE` 全量消息路径及完整 mention 解析仍需真实测试群验收。
 - 离线单元测试、本地 D1 集成测试和线上 `op=13` 挑战响应检查已通过。
 
 若需要版本控制或分支操作，先确认仓库是否已经由用户初始化；仍不可用时向用户说明并请求下一步指示。
@@ -57,7 +57,7 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 普通文本聊天，固定使用 `deepseek-flash` 非思考模式与内置流萤 System Prompt。
 - `/help [Command]`、`/DS list [model|think]`。
 - 管理员 `/chat [true|false]` 群聊天开关。
-- 群主 `/at @成员 [消息]` 主动 @ 直接指定的成员。
+- 群主 `/at @成员 [消息]` 主动 @ 直接指定的成员；群主需在手机 QQ 中授权机器人获取全部群消息，以便服务端取得完整 mention 列表。
 - `/version` 部署版本信息。
 - 普通聊天与 `/DS ask` 的附件传递。
 - 每群配置、权限、限流、费用上限与最小审计。
@@ -77,7 +77,7 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 不购买或使用 VPS。
 - 不维护常驻 WebSocket Bot 进程。
 - 不支持群内仅发起人可见的回复。
-- 不订阅或处理全部群消息。
+- 不把普通群消息用于聊天或业务处理；群主授权全部群消息后，只有平台明确标记机器人被 @ 的 `GROUP_MESSAGE_CREATE` 可以进入业务逻辑。
 - 不保留超过 24 小时的聊天上下文，不跨群或跨用户共享上下文；`/DS ask` 仍不使用上下文。
 - 不允许模型自主执行命令、修改权限或调用工具。
 - 不在 Worker 内运行无头浏览器模拟登录。
@@ -92,6 +92,7 @@ QQ 机器人 API v2：
 
 - Webhook：<https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/event-emit/webhook.html>
 - 群 @ 事件：<https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_at_message_create.html>
+- 群消息（全量模式）：<https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_message_create.html>
 - 消息规则：<https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/overview.html>
 - 发送群消息：<https://bot.q.qq.com/wiki/develop/api-v2/autogen/api/v2_groups_group_openid_messages.post.html>
 - 获取访问凭证：<https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/access-token.html>
@@ -108,7 +109,7 @@ QQ 文档目前写明：
 
 - API 基础地址为 `https://api.bot.qq.com`。
 - Webhook 支持 HTTPS，允许端口为 80、443、8080、8443。
-- 群 @ 事件为 `GROUP_AT_MESSAGE_CREATE`。
+- 群 @ 事件为 `GROUP_AT_MESSAGE_CREATE`；授权全部群消息后为 `GROUP_MESSAGE_CREATE`。
 - 群消息通过 `POST /v2/groups/{group_openid}/messages` 发送。
 - 群被动回复在 5 分钟内有效，同一条原消息最多回复 5 次。
 
@@ -123,7 +124,7 @@ DeepSeek 文档目前写明：
 
 ## 6. 群消息事件契约
 
-只处理 `GROUP_AT_MESSAGE_CREATE`。关键字段：
+处理 `GROUP_AT_MESSAGE_CREATE`，以及在群主授权全部群消息后收到的 `GROUP_MESSAGE_CREATE`。`GROUP_MESSAGE_CREATE` 仅在 `mentions` 中存在 `is_you=true` 的机器人提及时进入业务逻辑。关键字段：
 
 - 消息 ID：事件 `d.id`，用于被动回复与撤回。
 - 群标识：`d.group_openid`。
@@ -137,6 +138,8 @@ DeepSeek 文档目前写明：
 - 不要用昵称、头像或可修改的展示字段做权限判断。
 - 不要假设 `group_openid` 与真实 QQ 群号相同。
 - 不要假设 OpenID 在不同机器人或不同群之间可互换。
+- `GROUP_AT_MESSAGE_CREATE` 的 `mentions` 可能被平台裁剪，不能用于恢复 `/at` 的其他成员目标。
+- 群主授权全部群消息后，使用 `GROUP_MESSAGE_CREATE` 的完整 `mentions` 支持 `/at`；其他未明确 @ 机器人的全量消息必须忽略。
 - 处理文本、文本加顶层附件，以及附件-only 普通聊天；卡片和嵌套消息不进入主分支业务逻辑。
 - 接受 `message_type=0` 和引用消息 `message_type=103`；递归提取 `msg_elements` 中全部文本，不得只取第一段或因 `msg_elements` 非空而丢弃事件。
 - 递归收集 `msg_elements[].attachments` 中的图片/GIF/文件；QQ 表情标签不得导致消息被丢弃。
@@ -368,9 +371,11 @@ pong
 ### 9.12 `/at`
 
 - 语法：`@Bot /at @成员 [消息]`，群主必须在 `/at` 后直接 @ 唯一目标成员；消息可省略。
-- 目标优先取 `/at` 后的 `<@!ID>`；若缺失，兼容 `<qqbot-at-user id="ID">`，再回退到唯一 `mentions[].id` 或 `member_openid`。
+- 群主必须在手机 QQ 中将“机器人可获取的群聊消息范围”设为“获取群内全部消息”，平台才会在 `GROUP_MESSAGE_CREATE` 中提供完整的其他成员 mention。
+- `GROUP_AT_MESSAGE_CREATE` 会裁掉其他成员的 @，不能从其空 `mentions` 中恢复 `/at` 目标。
+- 目标优先取 `/at` 后的结构化 mention；在完整群消息事件中必须与 `mentions` 中唯一的非机器人、非 `is_you` 成员交叉校验。发送时使用该成员的 `member_openid`。
 - 只允许 `member_role=owner`；管理员、白名单成员和普通成员均回复“不可以”。
-- 输出内容使用 `<qqbot-at-user id="TARGET_ID" />` 官方兼容标记。
+- 输出使用官方 Markdown 消息：`msg_type=2`，`markdown.content` 中包含 `<qqbot-at-user id="TARGET_MEMBER_OPENID" />`。
 - 用户提供的消息部分必须移除伪造的 `qqbot-*` 和 `<@...>` 标签。
 - 不调用 DeepSeek，不额外发送第二条消息。
 
@@ -614,7 +619,7 @@ DEPLOYED_AT
 
 1. Webhook 挑战签名。
 2. 合法回调通过，非法签名、时间戳或 Body 被拒绝。
-3. `GROUP_AT_MESSAGE_CREATE` 解析。
+3. `GROUP_AT_MESSAGE_CREATE` 与机器人被明确 @ 的 `GROUP_MESSAGE_CREATE` 解析；普通全量群消息被忽略。
 4. `ping` 回复内容。
 5. `/DS ask` 只发送预期正文和 System Prompt。
 6. `/DS set` 参数校验与大小写处理；`/DS clear` 单字段恢复默认值；`/DS query` 返回当前群值。
@@ -641,6 +646,8 @@ DEPLOYED_AT
 27. 引用 `msg_elements` 中图片/GIF 表情包附件递归发送，QQ 表情标签归一化。
 28. `/at` 只允许群主、唯一结构化目标、拒绝伪造 @ 标签且不调用 DeepSeek。
 29. `/version` 只暴露部署时间与 Git SHA Worker 变量。
+30. `GROUP_MESSAGE_CREATE` 只有机器人被明确 `@`（`is_you=true`）时才处理；普通全量群消息不调用模型、不写上下文、不回复。
+31. 完整群消息中的 `/at` 使用唯一非机器人目标的 `member_openid`，不能把机器人自身或伪造 mention 当作目标。
 
 外部集成测试：
 
