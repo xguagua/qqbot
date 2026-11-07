@@ -107,7 +107,7 @@ function boundedProbability(
   if (raw === undefined || raw.trim() === "") {
     return fallback;
   }
-  const parsed = Number.parseFloat(raw);
+  const parsed = Number(raw);
   if (!Number.isFinite(parsed)) {
     return fallback;
   }
