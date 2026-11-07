@@ -1,8 +1,8 @@
 import type { AIClient } from "./ai/deepseek";
 import { DeepSeekClient } from "./ai/deepseek";
 import { handleChat, type ChatCommandDependencies } from "./commands/chat";
-import { handleAtRequest } from "./commands/at";
 import {
+  handleAutoReplySetting,
   handleDsAsk,
   handleDsClear,
   handleDsList,
@@ -42,6 +42,7 @@ import {
 import {
   D1ConfigRepository,
   type ConfigRepository,
+  type GroupConfig,
 } from "./storage/config";
 import { D1ChatRepository, type ChatSessionRepository } from "./storage/chat";
 import { jsonResponse, readJsonObject, truncateText } from "./util";
@@ -57,6 +58,7 @@ export interface WebhookDependencies {
   aiClient: AIClient;
   logger: Logger;
   now(): number;
+  random(): number;
 }
 
 export type DependencyFactory = (
@@ -99,6 +101,7 @@ export function createDefaultDependencies(
     aiClient: new DeepSeekClient({ apiKey: runtime.deepseekApiKey }),
     logger: new ConsoleLogger(),
     now: Date.now,
+    random: Math.random,
   };
 }
 
@@ -162,6 +165,10 @@ async function commandReply(
   deps: WebhookDependencies,
   runtime: RuntimeConfig,
 ): Promise<CommandResult | null> {
+  if (!event.addressedToBot) {
+    return maybeAutoReply(event, deps, runtime);
+  }
+
   const command = parseCommand(event.content);
   if (command === null) {
     const content = event.content.trim();
@@ -193,8 +200,12 @@ async function commandReply(
   if (command.kind === "chat_setting") {
     return handleChatSetting(event, command.enabled, dsDependencies(deps, runtime, event));
   }
-  if (command.kind === "at_request") {
-    return handleAtRequest(event, command.message, command.mentionIds);
+  if (command.kind === "auto_reply_setting") {
+    return handleAutoReplySetting(
+      event,
+      command.enabled,
+      dsDependencies(deps, runtime, event),
+    );
   }
   if (command.kind === "version") {
     return versionReply(runtime);
@@ -214,6 +225,53 @@ async function commandReply(
     return handleDsQuery(event, command.field, shared);
   }
   return handleDsSet(event, command.field, command.value, shared);
+}
+
+async function maybeAutoReply(
+  event: GroupAtMessageEvent,
+  deps: WebhookDependencies,
+  runtime: RuntimeConfig,
+): Promise<CommandResult | null> {
+  if (event.eventType !== "GROUP_MESSAGE_CREATE" || event.authorBot) {
+    return null;
+  }
+
+  const message = event.content.replace(/<@!?[^>]+>/g, "").trim();
+  if (message.startsWith("/")) {
+    return null;
+  }
+  if (
+    message.length === 0 &&
+    event.attachments.length === 0 &&
+    event.quotedContent === undefined
+  ) {
+    return null;
+  }
+  if (deps.random() >= runtime.autoReplyProbability) {
+    return null;
+  }
+
+  let config: GroupConfig;
+  try {
+    config = await deps.configRepository.get(event.groupOpenid);
+  } catch {
+    return null;
+  }
+  if (!config.autoReplyEnabled) {
+    deps.logger.info({
+      outcome: "auto_reply_disabled",
+      eventType: event.eventType,
+    });
+    return null;
+  }
+
+  deps.logger.info({
+    outcome: "auto_reply_selected",
+    eventType: event.eventType,
+  });
+  return handleChat(event, message, chatDependencies(deps, event), {
+    bypassChatSwitch: true,
+  });
 }
 
 async function sendReply(

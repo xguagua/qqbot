@@ -75,29 +75,19 @@ describe("command routing", () => {
     expect(parseCommand("/chat false")).toEqual({ kind: "chat_setting", enabled: false });
   });
 
-  it("routes version and owner at requests", () => {
+  it("routes version and auto-reply settings", () => {
     expect(parseCommand("/VERSION")).toEqual({ kind: "version" });
-    expect(parseCommand('/at <@!target-id> 你好')).toEqual({
-      kind: "at_request",
-      message: "你好",
-      mentionIds: ["target-id"],
+    expect(parseCommand("/autores")).toEqual({
+      kind: "auto_reply_setting",
+      enabled: null,
     });
-    expect(parseCommand("/at")).toEqual({
-      kind: "at_request",
-      message: "",
-      mentionIds: [],
+    expect(parseCommand("/AUTORES TRUE")).toEqual({
+      kind: "auto_reply_setting",
+      enabled: true,
     });
-    expect(parseCommand('<@!target> /at 你好')).toEqual({
-      kind: "at_request",
-      message: "你好",
-      mentionIds: ["target"],
-    });
-    expect(
-      parseCommand('/at <qqbot-at-user id="content-target" /> 你好'),
-    ).toEqual({
-      kind: "at_request",
-      message: "你好",
-      mentionIds: ["content-target"],
+    expect(parseCommand("/autores false")).toEqual({
+      kind: "auto_reply_setting",
+      enabled: false,
     });
   });
 
@@ -115,6 +105,10 @@ describe("command routing", () => {
     });
     expect(parseCommand("/unknown")).toEqual({ kind: "invalid", usage: "ds" });
     expect(parseCommand("/chat maybe")).toEqual({ kind: "invalid", usage: "ds" });
+    expect(parseCommand("/autores maybe")).toEqual({
+      kind: "invalid",
+      usage: "ds",
+    });
   });
 
   it("ignores unrelated messages", () => {

@@ -14,7 +14,7 @@ const HELP_ENTRIES: readonly HelpEntry[] = [
     aliases: ["roleplay", "聊天", "普通文本"],
     text:
       "普通文本聊天\n直接发送不以 / 开头且不是 ping 的文本，与流萤角色聊天。\n" +
-      "可附带文件。",
+      "可附带文件；开启自动回复后，未 @ 机器人的普通群消息也可能按概率触发。",
   },
   {
     aliases: ["/chat", "chat"],
@@ -22,10 +22,9 @@ const HELP_ENTRIES: readonly HelpEntry[] = [
       "/chat [true|false]\n查询或调整当前群聊天功能。省略参数时查询状态。仅管理员可用。",
   },
   {
-    aliases: ["/at", "at"],
+    aliases: ["/autores", "autores"],
     text:
-      "/at @成员 [消息]\n群主在 /at 后直接 @ 一位目标成员，可选附带消息；机器人会在回复中主动 @ 该成员。" +
-      "仅群主可用，并需要群主在手机 QQ 中授权机器人获取全部群消息。",
+      "/autores [true|false]\n查询或调整当前群自动回复。省略参数时查询状态。仅管理员可用。",
   },
   {
     aliases: ["/version", "version"],
@@ -88,7 +87,7 @@ export function helpReply(command = ""): string {
       "ping — 健康检查，回复 pong",
       "普通文本 — 与流萤聊天，可附文件",
       "/chat [true|false] — 查询或调整本群聊天开关",
-      "/at @成员 [消息] — 群主要求机器人主动 @ 直接指定的成员（需授权全部群消息）",
+      "/autores [true|false] — 查询或调整本群概率自动回复",
       "/version — 查看部署时间与 Git commit",
       "/help [Command] — 查看帮助",
       "/DS ask <问题> [附件] — 向 DeepSeek 提问，可引用消息，以 Markdown 返回",

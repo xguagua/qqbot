@@ -22,6 +22,22 @@ describe("runtime configuration", () => {
     const runtime = loadRuntimeConfig(testEnv());
     expect(runtime.groupLimitPerMinute).toBe(3);
     expect(runtime.memberCooldownMs).toBe(30_000);
+    expect(runtime.autoReplyProbability).toBe(0.1);
+  });
+
+  it("clamps auto-reply probability to the supported range", () => {
+    expect(
+      loadRuntimeConfig(testEnv({ AUTO_REPLY_PROBABILITY: "1.5" }))
+        .autoReplyProbability,
+    ).toBe(1);
+    expect(
+      loadRuntimeConfig(testEnv({ AUTO_REPLY_PROBABILITY: "-0.2" }))
+        .autoReplyProbability,
+    ).toBe(0);
+    expect(
+      loadRuntimeConfig(testEnv({ AUTO_REPLY_PROBABILITY: "invalid" }))
+        .autoReplyProbability,
+    ).toBe(0.1);
   });
 
   it("trims accidental whitespace around runtime credentials", () => {

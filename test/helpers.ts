@@ -51,6 +51,7 @@ export function testEnv(overrides: Partial<Env> = {}): Env {
     DS_MEMBER_COOLDOWN_SECONDS: "30",
     DS_GROUP_DAILY_BUDGET_NANO_USD: "100000000",
     DS_GLOBAL_DAILY_BUDGET_NANO_USD: "5000000000",
+    AUTO_REPLY_PROBABILITY: "0.1",
     GIT_COMMIT_SHA: "test-commit",
     DEPLOYED_AT: "2026-11-07T00:00:00.000Z",
     ...overrides,
@@ -66,6 +67,8 @@ export function event(overrides: Partial<GroupAtMessageEvent> = {}): GroupAtMess
     groupOpenid: "group-a",
     memberOpenid: "member-1",
     memberRole: "member",
+    authorBot: false,
+    addressedToBot: true,
     content: "ping",
     messageType: 0,
     quotedContent: undefined,
@@ -96,6 +99,7 @@ export async function signedEventRequest(
       author: {
         member_openid: value.memberOpenid,
         member_role: value.memberRole,
+        bot: value.authorBot,
       },
       content: value.content,
       attachments: value.attachments.map((attachment) => ({
@@ -361,6 +365,7 @@ export function createHarness(options: {
   globalBudget?: number;
   runtime?: Partial<RuntimeConfig>;
   now?: () => number;
+  random?: () => number;
 } = {}): Harness {
   const configs = new MemoryConfigRepository();
   const chats = new MemoryChatRepository();
@@ -417,6 +422,7 @@ export function createHarness(options: {
       aiClient: ai,
       logger,
       now: Date.now,
+      random: options.random ?? (() => 0.5),
     };
     return deps;
   };

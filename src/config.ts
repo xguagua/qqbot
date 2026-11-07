@@ -9,6 +9,7 @@ export type ReasoningEffort = (typeof ALLOWED_REASONING_EFFORTS)[number];
 
 export const DEFAULT_MODEL: DeepSeekModel = "deepseek-flash";
 export const DEFAULT_REASONING_EFFORT: ReasoningEffort = "low";
+export const DEFAULT_AUTO_REPLY_PROBABILITY = 0.1;
 
 export const DEFAULT_SYSTEM_PROMPT =
   "你是 QQ 群里的 AI 助手。回答应准确、简洁、友善；不确定时明确说明，不要编造事实。" +
@@ -18,7 +19,6 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const MAX_QUERY_CHARS = 2_000;
 export const MAX_CHAT_INPUT_CHARS = 1_000;
 export const MAX_QUOTED_CONTEXT_CHARS = 600;
-export const MAX_AT_MESSAGE_CHARS = 500;
 export const MAX_SYSTEM_PROMPT_CHARS = 1_000;
 export const MAX_OUTPUT_TOKENS = 1_024;
 export const MAX_ESTIMATED_INPUT_TOKENS = 16_384;
@@ -50,6 +50,7 @@ export interface AppBindings {
   DS_MEMBER_COOLDOWN_SECONDS?: string;
   DS_GROUP_DAILY_BUDGET_NANO_USD?: string;
   DS_GLOBAL_DAILY_BUDGET_NANO_USD?: string;
+  AUTO_REPLY_PROBABILITY?: string;
   GIT_COMMIT_SHA?: string;
   DEPLOYED_AT?: string;
 }
@@ -65,6 +66,7 @@ export interface RuntimeConfig {
   memberCooldownMs: number;
   groupDailyBudgetNanoUsd: number;
   globalDailyBudgetNanoUsd: number;
+  autoReplyProbability: number;
   gitCommitSha: string;
   deployedAt: string;
 }
@@ -96,6 +98,20 @@ function boundedInteger(
     return fallback;
   }
   return Math.min(maximum, Math.max(minimum, parsed));
+}
+
+function boundedProbability(
+  raw: string | undefined,
+  fallback: number,
+): number {
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+  const parsed = Number.parseFloat(raw);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(1, Math.max(0, parsed));
 }
 
 function parseAdminWhitelist(raw: string | undefined): ReadonlyMap<string, ReadonlySet<string>> {
@@ -145,6 +161,10 @@ export function loadRuntimeConfig(env: AppBindings): RuntimeConfig {
     adminWhitelist: parseAdminWhitelist(env.ADMIN_WHITELIST),
     ...guardLimits,
     globalDailyBudgetNanoUsd,
+    autoReplyProbability: boundedProbability(
+      env.AUTO_REPLY_PROBABILITY,
+      DEFAULT_AUTO_REPLY_PROBABILITY,
+    ),
     gitCommitSha: env.GIT_COMMIT_SHA?.trim() || "unknown",
     deployedAt: env.DEPLOYED_AT?.trim() || "unknown",
   };

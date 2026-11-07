@@ -399,3 +399,34 @@ export async function handleChatSetting(
   }
   return enabled ? "已启用本群聊天功能。" : "已关闭本群聊天功能。";
 }
+
+export async function handleAutoReplySetting(
+  event: GroupAtMessageEvent,
+  enabled: boolean | null,
+  deps: DSCommandDependencies,
+): Promise<string> {
+  if (!canManageGroup(event, deps.adminWhitelist)) {
+    return PERMISSION_DENIED_REPLY;
+  }
+
+  if (enabled === null) {
+    let config: GroupConfig;
+    try {
+      config = await deps.configRepository.get(event.groupOpenid);
+    } catch {
+      return "读取本群自动回复状态失败，请稍后再试。";
+    }
+    return config.autoReplyEnabled
+      ? "本群自动回复功能：已启用"
+      : "本群自动回复功能：已关闭";
+  }
+
+  try {
+    await deps.configRepository.update(event.groupOpenid, event.memberOpenid, {
+      autoReplyEnabled: enabled,
+    });
+  } catch {
+    return "更新本群自动回复状态失败，请稍后再试。";
+  }
+  return enabled ? "已启用本群自动回复功能。" : "已关闭本群自动回复功能。";
+}

@@ -80,6 +80,7 @@ export async function handleChat(
   event: GroupAtMessageEvent,
   message: string,
   deps: ChatCommandDependencies,
+  options: { bypassChatSwitch?: boolean } = {},
 ): Promise<string> {
   let config: GroupConfig;
   try {
@@ -87,7 +88,7 @@ export async function handleChat(
   } catch {
     return "服务繁忙，请稍后再试。";
   }
-  if (!config.chatEnabled) {
+  if (!options.bypassChatSwitch && !config.chatEnabled) {
     return "本群聊天功能已关闭。";
   }
 

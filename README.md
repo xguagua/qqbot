@@ -12,7 +12,7 @@ Cloudflare Worker 实现的 QQ 官方机器人主分支。它只处理群内 `@�
 - `/help [Command]` 与 `/DS list [model|think]`
 - 管理员 `/chat [true|false]` 查询或调整群聊天开关
 - `/version` 返回部署时间与 Git commit
-- 群主 `/at @成员 [消息]` 主动 @ 直接指定的成员
+- 管理员 `/autores [true|false]` 查询或调整当前群概率自动回复
 - 普通文本：以流萤角色进行按用户隔离的短期聊天
 - 普通聊天和 `/DS ask` 支持附带文件
 
@@ -20,7 +20,7 @@ Cloudflare Worker 实现的 QQ 官方机器人主分支。它只处理群内 `@�
 
 ## 当前状态
 
-主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。当前主分支包含流萤上下文聊天、聊天/DS 附件、图片与 GIF 表情包、群聊天开关、引用消息、`/version` 和群主 `/at`；群主授权全部群消息后，Worker 可使用 `GROUP_MESSAGE_CREATE` 的完整 mention 列表识别 `/at` 目标。
+主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。当前主分支包含流萤上下文聊天、聊天/DS 附件、图片与 GIF 表情包、群聊天开关、引用消息、`/version`、概率自动回复和 `/autores`。
 
 本地 Git 仓库的 `main` 跟踪 `origin/main`；按具体任务要求执行提交与推送。
 
@@ -65,7 +65,8 @@ QQ Webhook
 - 普通聊天使用群级 `chat_enabled` 开关；关闭后普通文本与附件聊天不调用 DeepSeek，但 `/DS` 命令不受影响。
 - QQ 引用消息 `message_type=103` 会递归提取 `msg_elements` 中全部文本（不只是第一段）；普通聊天和 `/DS ask` 都会把引用内容作为不可信上下文与当前消息一起发送。
 - 引用元素中的嵌套图片和 GIF 表情包附件会被收集并发送给 DeepSeek；QQ 表情标签归一化为 `[表情]`。
-- `GROUP_MESSAGE_CREATE` 只有在 `mentions` 中存在 `is_you=true` 的机器人提及时才会进入业务逻辑；其他全量群消息不调用模型、不写上下文、不回复。
+- 明确 @ 机器人的群消息进入原指令/聊天路径；未 @ 机器人的 `GROUP_MESSAGE_CREATE` 只有在 `/autores` 开启且命中全局概率时才进入聊天 agent。
+- 机器人作者消息和斜杠指令永远不会进入自动回复，避免回复环和误执行其他机器人的命令。
 
 ## 附件处理
 
@@ -77,24 +78,25 @@ QQ Webhook
 - 附件下载总超时 5 秒；带附件请求会缩短 DeepSeek 响应超时，为 QQ 被动回复留余量。
 - 附件内容按不可信输入处理，不能改变角色、系统规则或绕过代码限制。
 
-## 主动 @ 成员
+## 概率自动回复
 
-只有群主可以要求机器人主动 @ 一位成员。必须在同一条消息中通过 QQ 的 @ 功能选择唯一目标，再发送：
+群主在手机 QQ 中把“机器人可获取的群聊消息范围”设为“获取群内全部消息”后，Worker 可以接收普通群消息。自动回复规则：
 
-```text
-@Bot /at @目标成员 [要发送的文字]
+- 默认每条普通群消息有 `10%` 概率进入聊天 agent；全局概率通过 Worker 变量 `AUTO_REPLY_PROBABILITY` 配置，范围 `0` 到 `1`。
+- 自动回复复用普通聊天的流萤 System Prompt、`deepseek-flash` 非思考模式、附件处理、安全策略、费用预算和按群/用户隔离的 24 小时上下文。
+- 明确 @ 机器人的消息不走概率路径，继续执行原有指令或聊天。
+- 斜杠命令、空消息和不支持的卡片消息不自动回复。
+- 机器人作者消息一律忽略，避免机器人与机器人之间形成回复循环。
+- 每个群可用 `/autores true|false` 独立开关；`/autores` 查询当前状态。仅群主、群管理员或白名单可用。
+
+修改默认概率时编辑 `wrangler.toml`：
+
+```toml
+[vars]
+AUTO_REPLY_PROBABILITY = "0.1"
 ```
 
-机器人使用 `<qqbot-at-user id="..." />` 标记回复。QQ 要求单成员 @ 使用 Markdown 消息：`msg_type=2`，标记和可选正文放在 `markdown.content`，目标 ID 使用该成员的 `member_openid`。群 @ 事件会裁掉同一条消息中对其他成员的 @，因此群主必须先完成下面的平台设置，让 Worker 通过 `GROUP_MESSAGE_CREATE` 获得完整 `mentions`：
-
-1. 用群主账号在手机 QQ 打开目标群。
-2. 点击机器人头像进入机器人设置。
-3. 打开“机器人可获取的群聊消息范围”。
-4. 选择“获取群内全部消息”。
-5. 在 QQ 开放平台的事件订阅/Webhook 配置中同时启用群消息事件 `GROUP_MESSAGE_CREATE`；如果控制台按事件名勾选，保留 `GROUP_AT_MESSAGE_CREATE`，并勾选“群消息（全量模式）”。
-6. 保存后重新进入群聊；权限变更可能需要重新打开群或等待配置生效。
-
-Worker 只处理 `mentions[].is_you=true` 的 `GROUP_MESSAGE_CREATE`，并要求 `/at` 目标与唯一的非机器人、非 `is_you` mention 交叉校验。发送时使用目标的 `member_openid`，不用昵称或 QQ 号。普通群消息会被忽略，不会进入聊天、DeepSeek、D1 或群回复。
+修改后需重新运行 `./deploy.sh`。`0` 表示全局关闭随机触发，`1` 表示所有符合条件的普通群消息都触发，仍受群 `/autores` 开关和 AI 预算限制。
 
 ## 版本信息
 
@@ -125,6 +127,7 @@ pnpm exec wrangler deploy \
 | --- | ---: | ---: |
 | `/DS ask` 每群每分钟 | 3 次 | 最多 10 次 |
 | `/DS ask` 每人冷却 | 30 秒 | 10–300 秒 |
+| 自动回复概率 | 10% | 0–100% |
 | 附件数量 | 3 个 | 固定 |
 | 单附件大小 | 4 MB | 固定 |
 | 附件总大小 | 8 MB | 固定 |
@@ -284,11 +287,12 @@ pnpm exec wrangler d1 migrations apply qqbot --remote
 0001_initial.sql
 0002_chat_sessions.sql
 0003_chat_enabled.sql
+0004_auto_reply_enabled.sql
 ```
 
 该迁移创建：
 
-- `group_configs`：每群模型、思考强度、System Prompt、聊天开关、更新人和版本。
+- `group_configs`：每群模型、思考强度、System Prompt、聊天开关、自动回复开关、更新人和版本。
 - `config_audits`：仅记录变更字段和版本，不复制完整 System Prompt。
 - `chat_sessions`：按群和用户保存 24 小时短期聊天上下文，只保留最近 8 条消息。
 - 审计与聊天过期时间查询索引。
@@ -371,6 +375,7 @@ DS_GROUP_LIMIT_PER_MINUTE = "3"
 DS_MEMBER_COOLDOWN_SECONDS = "30"
 DS_GROUP_DAILY_BUDGET_NANO_USD = "100000000"
 DS_GLOBAL_DAILY_BUDGET_NANO_USD = "5000000000"
+AUTO_REPLY_PROBABILITY = "0.1"
 ```
 
 预算单位是 nano-USD：
@@ -582,13 +587,14 @@ pong
 
 发送时附上 1 个不超过限制的图片或文件，预期 DeepSeek 能结合附件回答。
 
-测试 `/at` 前先确认机器人消息范围已经切换为“获取群内全部消息”，然后在测试群执行：
+测试概率自动回复前，确认机器人消息范围已经切换为“获取群内全部消息”，并查询/开启本群开关：
 
 ```text
-@机器人 /at @目标成员 这是一条主动提及测试
+@机器人 /autores
+@机器人 /autores true
 ```
 
-预期只发送一条被动回复，目标是真实群成员并收到 @ 通知。Worker 日志应显示机器人被 @ 的 `GROUP_MESSAGE_CREATE` 进入业务处理；普通全量群消息不会产生 `reply_sent`。
+然后由群成员发送若干条不以 `/` 开头的普通消息。默认约 10% 会触发流萤回复；开关关闭、概率未命中和斜杠指令都不调用 DeepSeek。日志中的命中记录为 `auto_reply_selected`，关闭开关后的命中记录为 `auto_reply_disabled`。
 
 #### 11.5 验证去重和被动回复
 
@@ -798,6 +804,7 @@ pnpm exec wrangler secret put QQ_CLIENT_SECRET
 - [ ] 远程 D1 迁移 `0001_initial.sql` 已应用。
 - [ ] 远程 D1 迁移 `0002_chat_sessions.sql` 已应用。
 - [ ] 远程 D1 迁移 `0003_chat_enabled.sql` 已应用。
+- [ ] 远程 D1 迁移 `0004_auto_reply_enabled.sql` 已应用。
 - [ ] `QQ_APP_ID`、`QQ_CLIENT_SECRET`、`DEEPSEEK_API_KEY` 已设置为 Secrets。
 - [ ] `wrangler secret list` 不显示任何 Secret 值。
 - [ ] Durable Object 两个类已随 Worker 首次部署成功创建。
@@ -815,6 +822,7 @@ pnpm exec wrangler secret put QQ_CLIENT_SECRET
 - [QQ Webhook 配置与验签](https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/event-emit/webhook.html)
 - [QQ 回调签名算法](https://bot.q.qq.com/wiki/develop/api-v2/dev-prepare/interface-framework/sign.html)
 - [QQ 群 @ 机器人事件](https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_at_message_create.html)
+- [QQ 群消息（全量模式）](https://bot.q.qq.com/wiki/develop/api-v2/autogen/event/group_message_create.html)
 - [Cloudflare Workers 部署](https://developers.cloudflare.com/workers/wrangler/commands/#deploy)
 - [Cloudflare Wrangler Secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
 - [Cloudflare D1 入门](https://developers.cloudflare.com/d1/get-started/)
@@ -831,4 +839,4 @@ pnpm exec wrangler secret put QQ_CLIENT_SECRET
 - `waitUntil` 不是持久队列。如果真实测试发现任务会被中断，应先记录证据，再获得用户同意后引入 Queues 或其他持久异步机制。
 - QQ 是否允许模型回答中的 URL 只能在测试群验证；发送失败会作为 QQ 业务错误记录，不会向群里回显上游详情。
 - Cloudflare Worker、远程 D1、QQ Webhook 和基础 `ping`/`DS ask` 已通过；聊天已取消频率限制，仅保留费用预算。
-- `/at` 的完整 mention 解析、真实 @ 请求格式、`/DS ask` 引用上下文和 Markdown 返回已在离线测试中覆盖；部署后仍需群主切换消息范围并确认客户端 @ 通知。
+- 概率自动回复、`/autores` 群隔离、聊天 agent 复用、斜杠指令和机器人消息过滤已在离线测试中覆盖；真实触发频率和群配置仍需测试群确认。

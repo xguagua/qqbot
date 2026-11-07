@@ -1,5 +1,3 @@
-import { MAX_AT_MESSAGE_CHARS } from "../config";
-
 export type DSConfigField = "model" | "think" | "spm";
 
 export type ParsedCommand =
@@ -11,7 +9,7 @@ export type ParsedCommand =
   | { kind: "ds_list"; field: "model" | "think" | "all" }
   | { kind: "help"; command: string }
   | { kind: "chat_setting"; enabled: boolean | null }
-  | { kind: "at_request"; message: string; mentionIds: readonly string[] }
+  | { kind: "auto_reply_setting"; enabled: boolean | null }
   | { kind: "version" }
   | { kind: "invalid"; usage: "ask" | "set" | "ds" };
 
@@ -22,25 +20,7 @@ export const DS_USAGE =
 
 export const UNKNOWN_COMMAND_REPLY = "未知命令，请输入 /help 查询";
 
-function extractMentionIds(rawContent: string): string[] {
-  const angleMentions = [...rawContent.matchAll(/<@!?([^>]+)>/g)]
-    .map((match) => match[1]?.trim() ?? "")
-    .filter((id) => id.length > 0);
-  if (angleMentions.length > 0) {
-    return [...new Set(angleMentions)];
-  }
-
-  return [
-    ...new Set(
-      [...rawContent.matchAll(/<qqbot-at-user\b[^>]*\bid=["']([^"']+)["'][^>]*>/gi)]
-        .map((match) => match[1]?.trim() ?? "")
-        .filter((id) => id.length > 0),
-    ),
-  ];
-}
-
 export function parseCommand(rawContent: string): ParsedCommand | null {
-  const mentionIds = extractMentionIds(rawContent);
   const content = rawContent
     .replace(/<@!?[^>]+>/g, "")
     .trim();
@@ -68,16 +48,16 @@ export function parseCommand(rawContent: string): ParsedCommand | null {
     return { kind: "invalid", usage: "ds" };
   }
 
-  const atRequest = /^\/at(?:\s+([\s\S]*))?$/i.exec(content);
-  if (atRequest !== null) {
-    const message = (atRequest[1] ?? "")
-      .replace(/<qqbot-[^>]*>/gi, "")
-      .replace(/<@!?[^>]+>/g, "")
-      .trim();
-    if (message.length > MAX_AT_MESSAGE_CHARS) {
-      return { kind: "invalid", usage: "ds" };
+  const autoReplySetting = /^\/autores(?:\s+([\s\S]*))?$/i.exec(content);
+  if (autoReplySetting !== null) {
+    const value = (autoReplySetting[1] ?? "").trim().toLowerCase();
+    if (value === "") {
+      return { kind: "auto_reply_setting", enabled: null };
     }
-    return { kind: "at_request", message, mentionIds };
+    if (value === "true" || value === "false") {
+      return { kind: "auto_reply_setting", enabled: value === "true" };
+    }
+    return { kind: "invalid", usage: "ds" };
   }
 
   if (/^\/version$/i.test(content)) {

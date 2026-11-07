@@ -32,6 +32,8 @@ export interface GroupAtMessageEvent {
   groupOpenid: string;
   memberOpenid: string;
   memberRole: MemberRole;
+  authorBot: boolean;
+  addressedToBot: boolean;
   content: string;
   messageType: 0 | 103;
   quotedContent: string | undefined;
@@ -225,6 +227,10 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
   if (role !== "member" && role !== "admin" && role !== "owner") {
     throw new AppError("invalid_request", "Invalid member role", 400);
   }
+  const authorBot = parseBooleanFlag(author.bot);
+  if (authorBot) {
+    return null;
+  }
 
   if (
     (data.message_type !== 0 && data.message_type !== 103) ||
@@ -239,12 +245,9 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
   }
 
   const mentions = parseMentions(data.mentions);
-  if (
-    t === "GROUP_MESSAGE_CREATE" &&
-    !mentions.some((mention) => mention.isYou)
-  ) {
-    return null;
-  }
+  const addressedToBot =
+    t === "GROUP_AT_MESSAGE_CREATE" ||
+    mentions.some((mention) => mention.isYou);
 
   return {
     kind: "event",
@@ -253,6 +256,8 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
     groupOpenid: data.group_openid,
     memberOpenid: author.member_openid,
     memberRole: role,
+    authorBot,
+    addressedToBot,
     content: normalizeMessageText(data.content),
     messageType: data.message_type,
     quotedContent: parseQuotedContent(data.msg_elements),

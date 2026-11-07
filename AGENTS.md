@@ -22,10 +22,11 @@
 - 使用 QQ 官方机器人 API v2。
 - 由 Cloudflare Worker 处理 Webhook。
 - 响应群成员 `@机器人` 后的指定文字指令；其他非斜杠文本按流萤角色聊天处理。
+- 群主授权全部群消息后，普通群消息可按全局概率自动交给流萤聊天 agent。
 - 首版主分支支持 `ping` 和 DeepSeek 问答。
 - 完美世界竞技平台战绩查询只能进入独立实验分支。
 
-Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `reply_sent`。当前主分支包含群聊天开关、引用消息、图片/GIF 表情包、`/version` 和群主 `/at`；普通聊天已取消频率限制，仅保留费用预算。不要声称所有主分支验收项已经完成。
+Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `reply_sent`。当前主分支包含群聊天开关、引用消息、图片/GIF 表情包、`/version`、概率自动回复与 `/autores`；普通聊天和自动回复都仅保留费用预算。不要声称所有主分支验收项已经完成。
 
 ## 3. 当前仓库状态
 
@@ -38,7 +39,7 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 当前 `.git` 仍是占位目录，`git status` 报告“不是 Git 仓库”。
 - 不要删除或覆盖 `.git`。
 - Cloudflare Worker 已部署到 `https://qqbot.xguagua.cc.cd`，远程 D1 与三个运行时 Secrets 已配置。
-- QQ Webhook 已收到真实 `GROUP_AT_MESSAGE_CREATE` 事件；`ping` 与 `/DS ask` 已通过线上日志确认。`GROUP_MESSAGE_CREATE` 全量消息路径及完整 mention 解析仍需真实测试群验收。
+- QQ Webhook 已收到真实 `GROUP_AT_MESSAGE_CREATE` 事件；`ping` 与 `/DS ask` 已通过线上日志确认。`GROUP_MESSAGE_CREATE` 自动回复路径仍需真实测试群验收。
 - 离线单元测试、本地 D1 集成测试和线上 `op=13` 挑战响应检查已通过。
 
 若需要版本控制或分支操作，先确认仓库是否已经由用户初始化；仍不可用时向用户说明并请求下一步指示。
@@ -57,7 +58,8 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 普通文本聊天，固定使用 `deepseek-flash` 非思考模式与内置流萤 System Prompt。
 - `/help [Command]`、`/DS list [model|think]`。
 - 管理员 `/chat [true|false]` 群聊天开关。
-- 群主 `/at @成员 [消息]` 主动 @ 直接指定的成员；群主需在手机 QQ 中授权机器人获取全部群消息，以便服务端取得完整 mention 列表。
+- 管理员 `/autores [true|false]` 查询或切换当前群自动回复。
+- 普通群消息按全局概率自动交给流萤聊天 agent。
 - `/version` 部署版本信息。
 - 普通聊天与 `/DS ask` 的附件传递。
 - 每群配置、权限、限流、费用上限与最小审计。
@@ -77,7 +79,7 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 不购买或使用 VPS。
 - 不维护常驻 WebSocket Bot 进程。
 - 不支持群内仅发起人可见的回复。
-- 不把普通群消息用于聊天或业务处理；群主授权全部群消息后，只有平台明确标记机器人被 @ 的 `GROUP_MESSAGE_CREATE` 可以进入业务逻辑。
+- 全量群消息只有在 `/autores` 开启且概率命中时才进入聊天 agent；其他消息忽略。
 - 不保留超过 24 小时的聊天上下文，不跨群或跨用户共享上下文；`/DS ask` 仍不使用上下文。
 - 不允许模型自主执行命令、修改权限或调用工具。
 - 不在 Worker 内运行无头浏览器模拟登录。
@@ -124,7 +126,7 @@ DeepSeek 文档目前写明：
 
 ## 6. 群消息事件契约
 
-处理 `GROUP_AT_MESSAGE_CREATE`，以及在群主授权全部群消息后收到的 `GROUP_MESSAGE_CREATE`。`GROUP_MESSAGE_CREATE` 仅在 `mentions` 中存在 `is_you=true` 的机器人提及时进入业务逻辑。关键字段：
+处理 `GROUP_AT_MESSAGE_CREATE`，以及在群主授权全部群消息后收到的 `GROUP_MESSAGE_CREATE`。明确 @ 机器人的消息进入指令/聊天路径；未 @ 机器人的 `GROUP_MESSAGE_CREATE` 仅在 `/autores` 开启且概率命中时进入自动回复。关键字段：
 
 - 消息 ID：事件 `d.id`，用于被动回复与撤回。
 - 群标识：`d.group_openid`。
@@ -138,8 +140,9 @@ DeepSeek 文档目前写明：
 - 不要用昵称、头像或可修改的展示字段做权限判断。
 - 不要假设 `group_openid` 与真实 QQ 群号相同。
 - 不要假设 OpenID 在不同机器人或不同群之间可互换。
-- `GROUP_AT_MESSAGE_CREATE` 的 `mentions` 可能被平台裁剪，不能用于恢复 `/at` 的其他成员目标。
-- 群主授权全部群消息后，使用 `GROUP_MESSAGE_CREATE` 的完整 `mentions` 支持 `/at`；其他未明确 @ 机器人的全量消息必须忽略。
+- 必须跳过 `author.bot=true` 的机器人消息，避免自动回复形成循环。
+- `GROUP_MESSAGE_CREATE` 未 @ 机器人时，斜杠指令不进入自动回复，避免误执行或闲聊其他机器人的命令。
+- 自动回复候选消息仍需执行聊天 agent 的代码请求、提示词注入和输出安全检查。
 - 处理文本、文本加顶层附件，以及附件-only 普通聊天；卡片和嵌套消息不进入主分支业务逻辑。
 - 接受 `message_type=0` 和引用消息 `message_type=103`；递归提取 `msg_elements` 中全部文本，不得只取第一段或因 `msg_elements` 非空而丢弃事件。
 - 递归收集 `msg_elements[].attachments` 中的图片/GIF/文件；QQ 表情标签不得导致消息被丢弃。
@@ -368,16 +371,16 @@ pong
 - `/DS ask`、`/DS` 管理命令和 `ping` 不受该开关影响。
 - `message_type=103` 的引用聊天：当前正文是用户请求，引用内容作为不可信上下文；引用-only 消息也可进入聊天。
 
-### 9.12 `/at`
+### 9.12 `/autores`
 
-- 语法：`@Bot /at @成员 [消息]`，群主必须在 `/at` 后直接 @ 唯一目标成员；消息可省略。
-- 群主必须在手机 QQ 中将“机器人可获取的群聊消息范围”设为“获取群内全部消息”，平台才会在 `GROUP_MESSAGE_CREATE` 中提供完整的其他成员 mention。
-- `GROUP_AT_MESSAGE_CREATE` 会裁掉其他成员的 @，不能从其空 `mentions` 中恢复 `/at` 目标。
-- 目标优先取 `/at` 后的结构化 mention；在完整群消息事件中必须与 `mentions` 中唯一的非机器人、非 `is_you` 成员交叉校验。发送时使用该成员的 `member_openid`。
-- 只允许 `member_role=owner`；管理员、白名单成员和普通成员均回复“不可以”。
-- 输出使用官方 Markdown 消息：`msg_type=2`，`markdown.content` 中包含 `<qqbot-at-user id="TARGET_MEMBER_OPENID" />`。
-- 用户提供的消息部分必须移除伪造的 `qqbot-*` 和 `<@...>` 标签。
-- 不调用 DeepSeek，不额外发送第二条消息。
+- `/autores` 查询当前群自动回复开关。
+- `/autores true` 启用当前群自动回复。
+- `/autores false` 关闭当前群自动回复；关闭后普通群消息不调用 DeepSeek。
+- 参数大小写不敏感，其他参数属于错误命令。
+- 仅允许群主、群管理员或显式白名单执行。
+- 开关按 `group_openid` 隔离，并写入版本化配置审计。
+- 自动回复概率由 Worker 变量 `AUTO_REPLY_PROBABILITY` 控制，默认 `0.1`，硬限制为 `0` 到 `1`。
+- 参数未命中和概率未命中的群消息不调用 DeepSeek、不写入上下文、不发送回复。
 
 ### 9.13 `/version`
 
@@ -394,7 +397,7 @@ pong
 - 普通文本聊天：当前群所有成员。
 - `/help` 和 `/DS list`：当前群所有成员。
 - `/chat`：仅群主、群管理员或显式白名单。
-- `/at`：仅群主。
+- `/autores`：仅群主、群管理员或显式白名单。
 - `/version`：当前群所有成员。
 - `/DS set model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
 - `/DS clear|query model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
@@ -447,6 +450,7 @@ model
 reasoning_effort
 system_prompt
 chat_enabled
+auto_reply_enabled
 updated_by_openid
 updated_at
 version
@@ -560,7 +564,6 @@ src/qq/client.ts             群消息发送与错误映射
 src/commands/router.ts       指令识别与分发
 src/commands/ping.ts         ping
 src/commands/help.ts         全部与单命令帮助
-src/commands/at.ts           群主主动 @ 成员
 src/commands/version.ts      部署版本信息
 src/commands/ds.ts           DeepSeek 指令
 src/commands/chat.ts         流萤角色聊天与限额
@@ -599,6 +602,7 @@ DEPLOYED_AT
 
 - 默认模型。
 - 默认思考强度。
+- 自动回复概率 `AUTO_REPLY_PROBABILITY`，默认 `0.1`。
 - 每群/每成员限额。
 - 全局成本阈值。
 - 输入、输出和 System Prompt 长度限制。
@@ -619,7 +623,7 @@ DEPLOYED_AT
 
 1. Webhook 挑战签名。
 2. 合法回调通过，非法签名、时间戳或 Body 被拒绝。
-3. `GROUP_AT_MESSAGE_CREATE` 与机器人被明确 @ 的 `GROUP_MESSAGE_CREATE` 解析；普通全量群消息被忽略。
+3. `GROUP_AT_MESSAGE_CREATE` 与 `GROUP_MESSAGE_CREATE` 解析；机器人作者和卡片消息被忽略。
 4. `ping` 回复内容。
 5. `/DS ask` 只发送预期正文和 System Prompt。
 6. `/DS set` 参数校验与大小写处理；`/DS clear` 单字段恢复默认值；`/DS query` 返回当前群值。
@@ -641,13 +645,13 @@ DEPLOYED_AT
 22. 普通聊天与 `/DS ask` 的图片/文件附件被发送给 DeepSeek。
 23. 附件数量、单文件/总大小上限、HTTPS 与私网 URL 防护。
 24. 附件不进入 D1、日志或聊天上下文，下载错误不调用 DeepSeek。
-25. `/chat` 查询、启用、关闭、管理员权限和多群隔离。
+25. `/chat` 与 `/autores` 查询、启用、关闭、管理员权限和多群隔离。
 26. `message_type=103` 引用消息与引用-only 聊天解析，引用内容不可信。
 27. 引用 `msg_elements` 中图片/GIF 表情包附件递归发送，QQ 表情标签归一化。
-28. `/at` 只允许群主、唯一结构化目标、拒绝伪造 @ 标签且不调用 DeepSeek。
+28. 自动回复默认概率为 10%，配置值限制在 0–1；概率未命中和开关关闭时不调用 DeepSeek。
 29. `/version` 只暴露部署时间与 Git SHA Worker 变量。
-30. `GROUP_MESSAGE_CREATE` 只有机器人被明确 `@`（`is_you=true`）时才处理；普通全量群消息不调用模型、不写上下文、不回复。
-31. 完整群消息中的 `/at` 使用唯一非机器人目标的 `member_openid`，不能把机器人自身或伪造 mention 当作目标。
+30. 未 @ 机器人的普通群消息只在 `/autores` 开启且概率命中时进入聊天 agent；斜杠指令和机器人消息永不自动回复。
+31. 自动回复复用普通聊天的流萤 Prompt、固定模型、费用预算和群/用户隔离上下文。
 
 外部集成测试：
 

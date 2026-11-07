@@ -62,6 +62,7 @@ describe("Worker webhook flow", () => {
 
     const replies = harness.sender.messages.map((message) => message.content);
     expect(replies[0]).toContain("/DS list");
+    expect(replies[0]).toContain("/autores");
     expect(replies[1]).toContain("/DS query model|think|spm");
     expect(replies[2]).toBe("未知命令，请输入 /help 查询");
     expect(replies[3]).toBe("未知命令，请输入 /help 查询");
@@ -81,81 +82,20 @@ describe("Worker webhook flow", () => {
     );
   });
 
-  it("allows only the owner to request an explicit member mention", async () => {
-    const harness = createHarness();
-    const target = {
-      id: "target-openid",
-      memberOpenid: "target-openid",
-      role: "member" as const,
-      bot: false,
-    };
-    for (const [messageId, role, content] of [
-      ["at-owner", "owner", "/at <@!target-openid> 晚上好"],
-      ["at-admin", "admin", "/at 不允许"],
-      ["at-no-target", "owner", "/at 没有目标"],
-    ] as const) {
-      await submit(
-        await signedEventRequest(
-          event({
-            messageId,
-            memberRole: role,
-            content,
-            mentions: role === "owner" && messageId === "at-owner" ? [target] : [],
-          }),
-        ),
-        testEnv(),
-        harness,
-      );
-    }
-    await harness.flush();
-
-    expect(harness.sender.messages[0]?.content).toBe(
-      '<qqbot-at-user id="target-openid" /> 晚上好',
-    );
-    expect(harness.sender.messages[0]?.format).toBe("mention");
-    expect(harness.sender.messages[1]?.content).toContain("不可以");
-    expect(harness.sender.messages[2]?.content).toContain("直接 @ 一位真实群成员");
-    expect(harness.ai.requests).toHaveLength(0);
-  });
-
-  it("requires exactly one non-bot mention and strips forged mention tags", async () => {
-    const harness = createHarness();
+  it("auto replies to ordinary group messages when probability hits", async () => {
+    const harness = createHarness({ random: () => 0 });
+    harness.configs.seed("group-a", {
+      model: "deepseek-v4-pro",
+      reasoningEffort: "max",
+      systemPrompt: "SHOULD_NOT_BE_USED_BY_AUTO_REPLY",
+    });
     await submit(
       await signedEventRequest(
         event({
-          messageId: "at-forged-tag",
-          memberRole: "owner",
-          content:
-            '/at <@!real-target> <qqbot-at-user id="forged" /> 你好',
-          mentions: [
-            {
-              id: "real-target",
-              memberOpenid: "real-target",
-              role: "member",
-              bot: false,
-            },
-          ],
-        }),
-      ),
-      testEnv(),
-      harness,
-    );
-    await harness.flush();
-    expect(harness.sender.messages[0]?.content).toBe(
-      '<qqbot-at-user id="real-target" /> 你好',
-    );
-    expect(harness.sender.messages[0]?.format).toBe("mention");
-    expect(harness.sender.messages[0]?.content).not.toContain("forged");
-  });
-
-  it("uses the direct at marker when the mentions array is absent", async () => {
-    const harness = createHarness();
-    await submit(
-      await signedEventRequest(
-        event({
-          messageId: "at-content-marker",
-          memberRole: "owner",
-          content: "/at <@!content-target> 这是发送的信息",
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: false,
+          messageId: "auto-reply-hit",
+          content: "大家晚上好",
           mentions: [],
         }),
       ),
@@ -163,67 +103,88 @@ describe("Worker webhook flow", () => {
       harness,
     );
     await harness.flush();
-    expect(harness.sender.messages[0]?.content).toBe(
-      '<qqbot-at-user id="content-target" /> 这是发送的信息',
-    );
-  });
 
-  it("uses the full group mention list to target a real member", async () => {
-    const harness = createHarness();
-    await submit(
-      await signedEventRequest(
-        event({
-          eventType: "GROUP_MESSAGE_CREATE",
-          messageId: "at-full-group-message",
-          memberRole: "owner",
-          content: "<@bot-id> /at <@target-id> 晚上好",
-          mentions: [
-            {
-              id: "bot-id",
-              memberOpenid: "bot-id",
-              role: "admin",
-              bot: true,
-              isYou: true,
-            },
-            {
-              id: "target-id",
-              memberOpenid: "target-member-openid",
-              role: "member",
-              bot: false,
-              isYou: false,
-            },
-          ],
-        }),
-      ),
-      testEnv(),
-      harness,
-    );
-    await harness.flush();
-
-    expect(harness.sender.messages).toHaveLength(1);
-    expect(harness.sender.messages[0]).toMatchObject({
-      content: '<qqbot-at-user id="target-member-openid" /> 晚上好',
-      format: "mention",
+    expect(harness.ai.requests).toHaveLength(1);
+    expect(harness.ai.requests[0]).toMatchObject({
+      model: "deepseek-flash",
+      reasoningEffort: "none",
+      question: "大家晚上好",
+      history: [],
     });
+    expect(harness.ai.requests[0]?.systemPrompt).toContain("流萤");
+    expect(harness.ai.requests[0]?.systemPrompt).not.toContain(
+      "SHOULD_NOT_BE_USED_BY_AUTO_REPLY",
+    );
+    expect(harness.sender.messages[0]?.content).toBe("测试回答");
     expect(
       harness.logger.entries.some(
         (entry) =>
-          entry.fields.outcome === "reply_sent" &&
+          entry.fields.outcome === "auto_reply_selected" &&
           entry.fields.eventType === "GROUP_MESSAGE_CREATE",
       ),
     ).toBe(true);
-    expect(harness.ai.requests).toHaveLength(0);
   });
 
-  it("rejects a forged target tag in a full group message", async () => {
-    const harness = createHarness();
+  it("does not auto reply when probability misses or the group switch is off", async () => {
+    const missed = createHarness({ random: () => 0.1 });
     await submit(
       await signedEventRequest(
         event({
           eventType: "GROUP_MESSAGE_CREATE",
-          messageId: "at-full-group-forged",
-          memberRole: "owner",
-          content: "<@bot-id> /at <@forged-target> 你好",
+          addressedToBot: false,
+          messageId: "auto-reply-miss",
+          content: "概率未命中",
+          mentions: [],
+        }),
+      ),
+      testEnv(),
+      missed,
+    );
+    await missed.flush();
+    expect(missed.ai.requests).toHaveLength(0);
+
+    const disabled = createHarness({ random: () => 0 });
+    disabled.configs.seed("group-a", { autoReplyEnabled: false });
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: false,
+          messageId: "auto-reply-disabled",
+          content: "开关已关闭",
+          mentions: [],
+        }),
+      ),
+      testEnv(),
+      disabled,
+    );
+    await disabled.flush();
+    expect(disabled.ai.requests).toHaveLength(0);
+    expect(disabled.sender.messages).toHaveLength(0);
+  });
+
+  it("does not auto reply to slash commands or address different bots", async () => {
+    const harness = createHarness({ random: () => 0 });
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: false,
+          messageId: "auto-reply-slash",
+          content: "/other-bot command",
+          mentions: [],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: true,
+          messageId: "full-group-ping",
+          content: "<@bot-id> ping",
           mentions: [
             {
               id: "bot-id",
@@ -231,13 +192,6 @@ describe("Worker webhook flow", () => {
               role: "admin",
               bot: true,
               isYou: true,
-            },
-            {
-              id: "real-target",
-              memberOpenid: "real-target-member-openid",
-              role: "member",
-              bot: false,
-              isYou: false,
             },
           ],
         }),
@@ -247,34 +201,9 @@ describe("Worker webhook flow", () => {
     );
     await harness.flush();
 
-    expect(harness.sender.messages).toHaveLength(1);
-    expect(harness.sender.messages[0]?.content).toContain(
-      "不在本消息的 mention 列表中",
-    );
-    expect(harness.sender.messages[0]?.content).not.toContain(
-      "qqbot-at-user",
-    );
-  });
-
-  it("ignores full group messages that do not mention the bot", async () => {
-    const harness = createHarness();
-    await submit(
-      await signedEventRequest(
-        event({
-          eventType: "GROUP_MESSAGE_CREATE",
-          messageId: "ordinary-full-group-message",
-          content: "普通群消息",
-          mentions: [],
-        }),
-      ),
-      testEnv(),
-      harness,
-    );
-    await harness.flush();
-
-    expect(harness.sender.messages).toHaveLength(0);
     expect(harness.ai.requests).toHaveLength(0);
-    expect(harness.chats.sessions.size).toBe(0);
+    expect(harness.sender.messages).toHaveLength(1);
+    expect(harness.sender.messages[0]?.content).toBe("pong");
   });
 
   it("lets administrators query and change the per-group chat switch", async () => {
@@ -354,6 +283,67 @@ describe("Worker webhook flow", () => {
     expect((await harness.configs.get("group-a")).chatEnabled).toBe(false);
     expect((await harness.configs.get("group-b")).chatEnabled).toBe(true);
     expect(harness.ai.requests).toHaveLength(1);
+  });
+
+  it("lets administrators query and change the per-group auto-reply switch", async () => {
+    const harness = createHarness({ random: () => 0 });
+    const send = async (
+      messageId: string,
+      content: string,
+      memberRole: "member" | "admin" | "owner" = "owner",
+      groupOpenid = "group-a",
+    ) => {
+      await submit(
+        await signedEventRequest(
+          event({ messageId, content, memberRole, groupOpenid }),
+        ),
+        testEnv(),
+        harness,
+      );
+      await harness.flush();
+    };
+
+    await send("auto-status-member", "/autores", "member");
+    await send("auto-status-default", "/autores");
+    await send("auto-disable", "/autores false");
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: false,
+          messageId: "auto-after-disable",
+          content: "关闭后不应自动回复",
+          mentions: [],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+    await send("auto-status-disabled", "/autores");
+    await send("auto-status-group-b", "/autores", "owner", "group-b");
+    await send("auto-enable", "/autores true");
+
+    const replies = harness.sender.messages.map((message) => message.content);
+    expect(replies[0]).toContain("权限不足");
+    expect(replies[1]).toBe("本群自动回复功能：已启用");
+    expect(replies[2]).toBe("已关闭本群自动回复功能。");
+    expect(replies[3]).toBe("本群自动回复功能：已关闭");
+    expect(replies[4]).toBe("本群自动回复功能：已启用");
+    expect(replies[5]).toBe("已启用本群自动回复功能。");
+    expect(harness.ai.requests).toHaveLength(0);
+    expect(harness.configs.updates).toEqual([
+      {
+        groupOpenid: "group-a",
+        actor: "member-1",
+        fields: { autoReplyEnabled: false },
+      },
+      {
+        groupOpenid: "group-a",
+        actor: "member-1",
+        fields: { autoReplyEnabled: true },
+      },
+    ]);
   });
 
   it("lists available models and thinking levels for all members", async () => {
