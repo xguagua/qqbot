@@ -5,15 +5,8 @@ export type ErrorCode =
   | "signature_invalid"
   | "appid_mismatch"
   | "storage_unavailable"
-  | "rate_limited"
-  | "budget_exhausted"
   | "upstream_unavailable"
-  | "upstream_timeout"
-  | "response_empty"
   | "qq_business_error"
-  | "attachment_invalid"
-  | "attachment_too_large"
-  | "attachment_unavailable"
   | "reply_window_expired"
   | "internal";
 
@@ -33,22 +26,6 @@ export class AppError extends Error {
     this.code = code;
     this.status = status;
     this.diagnosticCode = diagnosticCode;
-  }
-}
-
-export class DeepSeekError extends AppError {
-  readonly retryable: boolean;
-  readonly requestMayBeBillable: boolean;
-
-  constructor(
-    code: ErrorCode,
-    message: string,
-    options: { retryable?: boolean; requestMayBeBillable?: boolean } = {},
-  ) {
-    super(code, message, 502);
-    this.name = "DeepSeekError";
-    this.retryable = options.retryable ?? false;
-    this.requestMayBeBillable = options.requestMayBeBillable ?? false;
   }
 }
 

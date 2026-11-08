@@ -1,64 +1,38 @@
-import type { AIClient, DeepSeekCompletion, DeepSeekCompletionRequest } from "../src/ai/deepseek";
-import type { ChatMessage } from "../src/chat/types";
-import type {
-  AttachmentLoader,
-  LoadedAttachment,
-} from "../src/files/attachments";
-import { DEFAULT_SYSTEM_PROMPT, type Env, type RuntimeConfig } from "../src/config";
+import type { Env, RuntimeConfig } from "../src/config";
 import type { Logger, LogFields } from "../src/log";
+import type { MessageSender, QQMessage } from "../src/qq/client";
 import type {
   GroupAtMessageEvent,
   MemberRole,
-  MentionedGroupMember,
   QQAttachment,
 } from "../src/qq/schema";
 import { signWebhookPayload } from "../src/qq/verify";
-import type { MessageSender, QQMessage } from "../src/qq/client";
 import {
-  GlobalBudgetStateMachine,
   GroupGuardState,
   type EventGuard,
-  type GlobalBudget,
-  type ReservationResult,
 } from "../src/security/ratelimit";
-import type {
-  ConfigRepository,
-  GroupConfig,
-  GroupConfigChanges,
-} from "../src/storage/config";
-import { defaultGroupConfig } from "../src/storage/config";
-import type { ChatSessionRepository } from "../src/storage/chat";
-import type { Bytes } from "../src/util";
 import type {
   DependencyFactory,
   WebhookDependencies,
 } from "../src/worker";
 
-// Public sample AppSecret from QQ's webhook challenge documentation.
 export const TEST_SECRET = "DG5g3B4j9X2KOErG";
 export const TEST_APP_ID = "test-app-id";
 
 export function testEnv(overrides: Partial<Env> = {}): Env {
   return {
-    DB: {} as D1Database,
     GROUP_GUARD: {} as DurableObjectNamespace,
-    GLOBAL_BUDGET: {} as DurableObjectNamespace,
     QQ_APP_ID: TEST_APP_ID,
     QQ_CLIENT_SECRET: TEST_SECRET,
-    DEEPSEEK_API_KEY: "test-deepseek-key",
-    ADMIN_WHITELIST: "{}",
-    DS_GROUP_LIMIT_PER_MINUTE: "3",
-    DS_MEMBER_COOLDOWN_SECONDS: "30",
-    DS_GROUP_DAILY_BUDGET_NANO_USD: "100000000",
-    DS_GLOBAL_DAILY_BUDGET_NANO_USD: "5000000000",
-    AUTO_REPLY_PROBABILITY: "0.1",
     GIT_COMMIT_SHA: "test-commit",
-    DEPLOYED_AT: "2026-11-07T00:00:00.000Z",
+    DEPLOYED_AT: "2026-11-08T00:00:00+08:00",
     ...overrides,
   };
 }
 
-export function event(overrides: Partial<GroupAtMessageEvent> = {}): GroupAtMessageEvent {
+export function event(
+  overrides: Partial<GroupAtMessageEvent> = {},
+): GroupAtMessageEvent {
   const now = new Date();
   return {
     kind: "event",
@@ -69,7 +43,7 @@ export function event(overrides: Partial<GroupAtMessageEvent> = {}): GroupAtMess
     memberRole: "member",
     authorBot: false,
     addressedToBot: true,
-    content: "ping",
+    content: "/version",
     messageType: 0,
     quotedContent: undefined,
     attachments: [],
@@ -117,28 +91,27 @@ export async function signedEventRequest(
       })),
       timestamp: value.timestamp,
       message_type: value.messageType,
-      msg_elements:
-        [
-          ...(value.quotedContent === undefined
-            ? []
-            : [{ content: value.quotedContent, message_type: 103 }]),
-          ...(options.elementContents ?? []).map((content) => ({
-            content,
-            message_type: 0,
-          })),
-          ...(options.elementAttachments ?? []).map((attachment) => ({
-            content: "",
-            message_type: 0,
-            attachments: [
-              {
-                url: attachment.url,
-                filename: attachment.filename,
-                content_type: attachment.contentType,
-                size: attachment.size,
-              },
-            ],
-          })),
-        ],
+      msg_elements: [
+        ...(value.quotedContent === undefined
+          ? []
+          : [{ content: value.quotedContent, message_type: 103 }]),
+        ...(options.elementContents ?? []).map((content) => ({
+          content,
+          message_type: 0,
+        })),
+        ...(options.elementAttachments ?? []).map((attachment) => ({
+          content: "",
+          message_type: 0,
+          attachments: [
+            {
+              url: attachment.url,
+              filename: attachment.filename,
+              content_type: attachment.contentType,
+              size: attachment.size,
+            },
+          ],
+        })),
+      ],
     },
   };
   const raw = new TextEncoder().encode(JSON.stringify(payload));
@@ -178,102 +151,11 @@ export function challengeRequest(appId: string | null = TEST_APP_ID): Request {
   });
 }
 
-export class MemoryConfigRepository implements ConfigRepository {
-  readonly configs = new Map<string, GroupConfig>();
-  readonly updates: Array<{
-    groupOpenid: string;
-    actor: string;
-    fields: GroupConfigChanges;
-  }> = [];
-
-  async get(groupOpenid: string): Promise<GroupConfig> {
-    return { ...(this.configs.get(groupOpenid) ?? defaultGroupConfig(groupOpenid)) };
-  }
-
-  async update(
-    groupOpenid: string,
-    actor: string,
-    changes: GroupConfigChanges,
-  ): Promise<GroupConfig> {
-    const previous = await this.get(groupOpenid);
-    const next: GroupConfig = {
-      ...previous,
-      ...changes,
-      updatedByOpenid: actor,
-      updatedAt: new Date().toISOString(),
-      version: previous.version + 1,
-    };
-    this.configs.set(groupOpenid, next);
-    this.updates.push({ groupOpenid, actor, fields: changes });
-    return { ...next };
-  }
-
-  async cleanupAudits(): Promise<void> {}
-
-  seed(groupOpenid: string, changes: Partial<GroupConfig>): void {
-    this.configs.set(groupOpenid, {
-      ...defaultGroupConfig(groupOpenid),
-      ...changes,
-    });
-  }
-}
-
 export class FakeEventGuard implements EventGuard {
-  readonly machine: GroupGuardState;
-  readonly #now: () => number;
-
-  constructor(machine: GroupGuardState, now: () => number = Date.now) {
-    this.machine = machine;
-    this.#now = now;
-  }
+  readonly machine = new GroupGuardState({ events: {} });
 
   async claimEvent(messageId: string): Promise<boolean> {
-    return this.machine.claimEvent(messageId, this.#now());
-  }
-
-  async reserveAsk(memberOpenid: string, reservedNanoUsd: number): Promise<ReservationResult> {
-    return this.machine.reserveAsk(memberOpenid, reservedNanoUsd, this.#now());
-  }
-
-  async reserveChat(memberOpenid: string, reservedNanoUsd: number): Promise<ReservationResult> {
-    return this.machine.reserveChat(memberOpenid, reservedNanoUsd, this.#now());
-  }
-
-  async settleAsk(dayKey: string, reservedNanoUsd: number, actualNanoUsd: number): Promise<void> {
-    this.machine.settleAsk(dayKey, reservedNanoUsd, actualNanoUsd);
-  }
-}
-
-export class FakeGlobalBudget implements GlobalBudget {
-  readonly machine: GlobalBudgetStateMachine;
-
-  constructor(machine: GlobalBudgetStateMachine) {
-    this.machine = machine;
-  }
-
-  async reserve(reservedNanoUsd: number): Promise<ReservationResult> {
-    return this.machine.reserve(reservedNanoUsd, Date.now());
-  }
-
-  async settle(dayKey: string, reservedNanoUsd: number, actualNanoUsd: number): Promise<void> {
-    this.machine.settle(dayKey, reservedNanoUsd, actualNanoUsd);
-  }
-}
-
-export class FakeAIClient implements AIClient {
-  readonly requests: DeepSeekCompletionRequest[] = [];
-  response: DeepSeekCompletion = {
-    content: "测试回答",
-    usage: { promptTokens: 100, completionTokens: 20 },
-  };
-  error: unknown;
-
-  async complete(request: DeepSeekCompletionRequest): Promise<DeepSeekCompletion> {
-    this.requests.push(request);
-    if (this.error !== undefined) {
-      throw this.error;
-    }
-    return this.response;
+    return this.machine.claimEvent(messageId, Date.now());
   }
 }
 
@@ -283,51 +165,6 @@ export class FakeMessageSender implements MessageSender {
   async sendMessage(message: QQMessage): Promise<void> {
     this.messages.push(message);
   }
-}
-
-export class FakeAttachmentLoader implements AttachmentLoader {
-  readonly requests: Array<readonly QQAttachment[]> = [];
-  loaded: LoadedAttachment[] = [
-    {
-      kind: "file",
-      filename: "example.txt",
-      dataUrl: "data:text/plain;base64,aGVsbG8=",
-    },
-  ];
-  error: unknown;
-
-  async load(attachments: readonly QQAttachment[]): Promise<LoadedAttachment[]> {
-    this.requests.push(attachments);
-    if (this.error !== undefined) {
-      throw this.error;
-    }
-    return this.loaded;
-  }
-}
-
-export class MemoryChatRepository implements ChatSessionRepository {
-  readonly sessions = new Map<string, ChatMessage[]>();
-
-  async load(groupOpenid: string, memberOpenid: string): Promise<ChatMessage[]> {
-    return [...(this.sessions.get(`${groupOpenid}\u0000${memberOpenid}`) ?? [])];
-  }
-
-  async appendTurn(
-    groupOpenid: string,
-    memberOpenid: string,
-    userMessage: string,
-    assistantMessage: string,
-  ): Promise<void> {
-    const key = `${groupOpenid}\u0000${memberOpenid}`;
-    const messages: ChatMessage[] = [
-      ...(this.sessions.get(key) ?? []),
-      { role: "user", content: userMessage },
-      { role: "assistant", content: assistantMessage },
-    ];
-    this.sessions.set(key, messages.slice(-8));
-  }
-
-  async cleanupExpired(): Promise<void> {}
 }
 
 export class FakeLogger implements Logger {
@@ -343,12 +180,7 @@ export class FakeLogger implements Logger {
 }
 
 export interface Harness {
-  configs: MemoryConfigRepository;
-  chats: MemoryChatRepository;
-  attachments: FakeAttachmentLoader;
   guards: Map<string, FakeEventGuard>;
-  globalBudget: FakeGlobalBudget;
-  ai: FakeAIClient;
   sender: FakeMessageSender;
   logger: FakeLogger;
   factory: DependencyFactory;
@@ -358,82 +190,33 @@ export interface Harness {
   runtime(): RuntimeConfig;
 }
 
-export function createHarness(options: {
-  groupLimit?: number;
-  cooldownMs?: number;
-  groupBudget?: number;
-  globalBudget?: number;
-  runtime?: Partial<RuntimeConfig>;
-  now?: () => number;
-  random?: () => number;
-} = {}): Harness {
-  const configs = new MemoryConfigRepository();
-  const chats = new MemoryChatRepository();
-  const attachments = new FakeAttachmentLoader();
+export function createHarness(): Harness {
   const guards = new Map<string, FakeEventGuard>();
-  const groupLimitPerMinute = options.groupLimit ?? 3;
-  const memberCooldownMs = options.cooldownMs ?? 30_000;
-  const groupDailyBudgetNanoUsd = options.groupBudget ?? 100_000_000;
-  const global = new FakeGlobalBudget(
-    new GlobalBudgetStateMachine(
-      { dayKey: new Date().toISOString().slice(0, 10), spentNanoUsd: 0 },
-      options.globalBudget ?? 5_000_000_000,
-    ),
-  );
-  const ai = new FakeAIClient();
   const sender = new FakeMessageSender();
   const logger = new FakeLogger();
   const tasks: Promise<unknown>[] = [];
-
   let computedRuntime: RuntimeConfig | undefined;
+
   const factory: DependencyFactory = (_env, runtime) => {
-    computedRuntime = { ...runtime, ...options.runtime };
+    computedRuntime = runtime;
     const deps: WebhookDependencies = {
-      configRepository: configs,
-      chatRepository: chats,
-      attachmentLoader: attachments,
       eventGuard(groupOpenid) {
         let guard = guards.get(groupOpenid);
         if (guard === undefined) {
-          guard = new FakeEventGuard(
-            new GroupGuardState(
-              {
-                events: {},
-                windowStartedAt: 0,
-                windowCount: 0,
-                memberCooldowns: {},
-                budgetDay: new Date().toISOString().slice(0, 10),
-                budgetSpentNanoUsd: 0,
-              },
-              {
-                groupLimitPerMinute,
-                memberCooldownMs,
-                groupDailyBudgetNanoUsd,
-              },
-            ),
-            options.now ?? Date.now,
-          );
+          guard = new FakeEventGuard();
           guards.set(groupOpenid, guard);
         }
         return guard;
       },
-      globalBudget: global,
       messageSender: sender,
-      aiClient: ai,
       logger,
       now: Date.now,
-      random: options.random ?? (() => 0.5),
     };
     return deps;
   };
 
   return {
-    configs,
-    chats,
-    attachments,
     guards,
-    globalBudget: global,
-    ai,
     sender,
     logger,
     factory,
@@ -455,12 +238,10 @@ export function createHarness(options: {
   };
 }
 
-export function bytes(value: string): Bytes {
+export function bytes(value: string): Uint8Array<ArrayBuffer> {
   return new TextEncoder().encode(value);
 }
 
 export function role(value: MemberRole): MemberRole {
   return value;
 }
-
-export const testDefaultPrompt = DEFAULT_SYSTEM_PROMPT;

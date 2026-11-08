@@ -3,7 +3,7 @@ import { GlobalBudget } from "./durable/global-budget";
 import type { Env } from "./config";
 import { errorCode } from "./errors";
 import { ConsoleLogger } from "./log";
-import { handleError, handleScheduled, handleWebhook } from "./worker";
+import { handleError, handleWebhook } from "./worker";
 
 export { GlobalBudget, GroupGuard };
 
@@ -18,13 +18,5 @@ export default {
       });
       return handleError(error);
     }
-  },
-
-  async scheduled(
-    controller: ScheduledController,
-    env: Env,
-    ctx: ExecutionContext,
-  ): Promise<void> {
-    await handleScheduled(controller, env, ctx);
   },
 };

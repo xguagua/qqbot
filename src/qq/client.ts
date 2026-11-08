@@ -12,7 +12,7 @@ export interface QQMessage {
   format?: QQMessageFormat;
 }
 
-export type QQMessageFormat = "text" | "markdown";
+export type QQMessageFormat = "text" | "markdown" | "mention";
 
 export interface MessageSender {
   sendMessage(message: QQMessage): Promise<void>;
@@ -62,7 +62,7 @@ export class QQApiClient implements MessageSender {
     const timer = setTimeout(() => controller.abort(), this.#timeoutMs);
     const format = message.format ?? "text";
     const body =
-      format === "markdown"
+      format === "markdown" || format === "mention"
         ? {
             msg_type: 2,
             markdown: {

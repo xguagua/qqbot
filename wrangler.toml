@@ -4,20 +4,8 @@ compatibility_date = "2026-10-01"
 compatibility_flags = ["webcrypto_modern_algorithms"]
 
 [vars]
-ADMIN_WHITELIST = "{}"
-DS_GROUP_LIMIT_PER_MINUTE = "3"
-DS_MEMBER_COOLDOWN_SECONDS = "30"
-DS_GROUP_DAILY_BUDGET_NANO_USD = "100000000"
-DS_GLOBAL_DAILY_BUDGET_NANO_USD = "5000000000"
-AUTO_REPLY_PROBABILITY = "0.1"
 GIT_COMMIT_SHA = "unknown"
 DEPLOYED_AT = "unknown"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "qqbot"
-database_id = "5497e4fb-58b6-4a6d-8c8a-2e78e186bc37"
-migrations_dir = "migrations"
 
 [[durable_objects.bindings]]
 name = "GROUP_GUARD"
@@ -30,9 +18,6 @@ class_name = "GlobalBudget"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["GroupGuard", "GlobalBudget"]
-
-[triggers]
-crons = ["0 3 * * *"]
 
 [observability.logs]
 enabled = true

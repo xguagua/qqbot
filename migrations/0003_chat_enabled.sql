@@ -1,2 +1,0 @@
-ALTER TABLE group_configs
-  ADD COLUMN chat_enabled INTEGER NOT NULL DEFAULT 1;
