@@ -182,6 +182,72 @@ describe("Worker webhook flow", () => {
     expect(harness.sender.messages[0]?.content).not.toContain("qqbot-at-user");
   });
 
+  it("allows another robot as the at target but not the bot itself", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: true,
+          messageId: "at-other-bot",
+          memberRole: "owner",
+          content: "<@bot-self> /at <@bot-target> 你好，机器人",
+          mentions: [
+            {
+              id: "bot-self",
+              memberOpenid: "bot-self-openid",
+              role: "admin",
+              bot: true,
+              isYou: true,
+            },
+            {
+              id: "bot-target",
+              memberOpenid: "bot-target-openid",
+              role: "member",
+              bot: true,
+              isYou: false,
+            },
+          ],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: true,
+          messageId: "at-self",
+          memberRole: "owner",
+          content: "<@bot-self> /at <@bot-self> 自己",
+          mentions: [
+            {
+              id: "bot-self",
+              memberOpenid: "bot-self-openid",
+              role: "admin",
+              bot: true,
+              isYou: true,
+            },
+          ],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.sender.messages[0]).toMatchObject({
+      content: '<qqbot-at-user id="bot-target-openid" /> 你好，机器人',
+      format: "mention",
+    });
+    expect(harness.sender.messages[1]?.content).toContain(
+      "群成员或机器人",
+    );
+    expect(harness.sender.messages[1]?.content).toContain("不能是机器人自身");
+  });
+
   it("auto replies to ordinary group messages when probability hits", async () => {
     const harness = createHarness({ random: () => 0 });
     harness.configs.seed("group-a", {

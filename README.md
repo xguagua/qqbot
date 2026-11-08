@@ -108,7 +108,7 @@ AUTO_REPLY_PROBABILITY = "0.1"
 @Bot /at @目标成员 [消息]
 ```
 
-机器人使用 `msg_type=2` Markdown 消息，在 `markdown.content` 中发送 `<qqbot-at-user id="TARGET_MEMBER_OPENID" />`。目标必须来自同一条消息中唯一、真实且非机器人的 mention。
+机器人使用 `msg_type=2` Markdown 消息，在 `markdown.content` 中发送 `<qqbot-at-user id="TARGET_MEMBER_OPENID" />`。目标必须来自同一条消息中唯一的 mention，可以是群成员或其他机器人，但不能是机器人自身。
 
 `GROUP_AT_MESSAGE_CREATE` 可能裁掉其他成员 mention，因此生产群应开启“获取群内全部消息”并订阅 `GROUP_MESSAGE_CREATE`。
 

@@ -389,7 +389,7 @@ pong
 
 - 语法：`@Bot /at @成员 [消息]`。
 - 仅群主可用。
-- 必须直接 @ 唯一真实成员，并优先使用完整 `GROUP_MESSAGE_CREATE` 的 `mentions` 列表交叉校验。
+- 必须直接 @ 唯一目标，可以是群成员或其他机器人，但不能是机器人自身；优先使用完整 `GROUP_MESSAGE_CREATE` 的 `mentions` 列表交叉校验。
 - 目标 id 使用该成员的 `member_openid`。
 - 输出为 `msg_type=2` Markdown 消息，`markdown.content` 中使用 `<qqbot-at-user id="..." />`。
 - 移除用户消息及伪造的 `qqbot-*`、`<@...>` 标签。
@@ -670,7 +670,7 @@ DEPLOYED_AT
 30. 未 @ 机器人的普通群消息只在 `/autores` 开启且概率命中时进入聊天 agent；斜杠指令和机器人消息永不自动回复。
 31. 自动回复复用普通聊天的流萤 Prompt、固定模型、费用预算和群/用户隔离上下文。
 32. `/autores force` 仅群主可用，启用后跳过概率采样但继续执行安全过滤；普通管理员只能使用 `true`、`false` 和查询。
-33. `/at` 仅群主可用，目标必须来自唯一真实 mention，并映射到 `member_openid`。
+33. `/at` 仅群主可用，目标必须来自唯一 mention，可以是群成员或其他机器人但不能是机器人自身，并映射到 `member_openid`。
 
 外部集成测试：
 
