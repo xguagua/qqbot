@@ -111,4 +111,30 @@ describe("group event mention parsing", () => {
       }),
     ).toBeNull();
   });
+
+  it("accepts compatible group message aliases and omitted optional fields", () => {
+    const payload = parseWebhookPayload({
+      op: 0,
+      t: "GROUP_MESSAGE_CREATE",
+      d: {
+        id: "compatible-message",
+        group_id: "compatible-group",
+        author: {
+          id: "compatible-member",
+          member_role: "member",
+        },
+        content: "兼容字段消息",
+      },
+    });
+
+    expect(payload).toMatchObject({
+      kind: "event",
+      eventType: "GROUP_MESSAGE_CREATE",
+      groupOpenid: "compatible-group",
+      memberOpenid: "compatible-member",
+      messageType: 0,
+      addressedToBot: false,
+      timestampMs: expect.any(Number),
+    });
+  });
 });

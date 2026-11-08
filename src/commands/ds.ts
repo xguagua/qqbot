@@ -402,31 +402,46 @@ export async function handleChatSetting(
 
 export async function handleAutoReplySetting(
   event: GroupAtMessageEvent,
-  enabled: boolean | null,
+  mode: "query" | "probability" | "off" | "force",
   deps: DSCommandDependencies,
 ): Promise<string> {
   if (!canManageGroup(event, deps.adminWhitelist)) {
     return PERMISSION_DENIED_REPLY;
   }
 
-  if (enabled === null) {
+  if (mode === "query") {
     let config: GroupConfig;
     try {
       config = await deps.configRepository.get(event.groupOpenid);
     } catch {
       return "读取本群自动回复状态失败，请稍后再试。";
     }
-    return config.autoReplyEnabled
-      ? "本群自动回复功能：已启用"
-      : "本群自动回复功能：已关闭";
+    if (!config.autoReplyEnabled) {
+      return "本群自动回复功能：已关闭";
+    }
+    return config.autoReplyForce
+      ? "本群自动回复功能：已启用（force 强制模式）"
+      : "本群自动回复功能：已启用（概率模式）";
   }
 
+  if (mode === "force" && event.memberRole !== "owner") {
+    return "不可以：只有群主可以启用自动回复 force 模式。";
+  }
+
+  const enabled = mode !== "off";
   try {
     await deps.configRepository.update(event.groupOpenid, event.memberOpenid, {
       autoReplyEnabled: enabled,
+      autoReplyForce: mode === "force",
     });
   } catch {
     return "更新本群自动回复状态失败，请稍后再试。";
   }
-  return enabled ? "已启用本群自动回复功能。" : "已关闭本群自动回复功能。";
+  if (mode === "off") {
+    return "已关闭本群自动回复功能。";
+  }
+  if (mode === "force") {
+    return "已启用本群自动回复强制模式：每条符合安全过滤的普通消息都会触发。";
+  }
+  return "已启用本群概率自动回复功能。";
 }

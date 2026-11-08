@@ -9,7 +9,10 @@ export type ParsedCommand =
   | { kind: "ds_list"; field: "model" | "think" | "all" }
   | { kind: "help"; command: string }
   | { kind: "chat_setting"; enabled: boolean | null }
-  | { kind: "auto_reply_setting"; enabled: boolean | null }
+  | {
+      kind: "auto_reply_setting";
+      mode: "query" | "probability" | "off" | "force";
+    }
   | { kind: "version" }
   | { kind: "invalid"; usage: "ask" | "set" | "ds" };
 
@@ -52,10 +55,16 @@ export function parseCommand(rawContent: string): ParsedCommand | null {
   if (autoReplySetting !== null) {
     const value = (autoReplySetting[1] ?? "").trim().toLowerCase();
     if (value === "") {
-      return { kind: "auto_reply_setting", enabled: null };
+      return { kind: "auto_reply_setting", mode: "query" };
     }
-    if (value === "true" || value === "false") {
-      return { kind: "auto_reply_setting", enabled: value === "true" };
+    if (value === "true") {
+      return { kind: "auto_reply_setting", mode: "probability" };
+    }
+    if (value === "false") {
+      return { kind: "auto_reply_setting", mode: "off" };
+    }
+    if (value === "force") {
+      return { kind: "auto_reply_setting", mode: "force" };
     }
     return { kind: "invalid", usage: "ds" };
   }

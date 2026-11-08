@@ -203,7 +203,7 @@ async function commandReply(
   if (command.kind === "auto_reply_setting") {
     return handleAutoReplySetting(
       event,
-      command.enabled,
+      command.mode,
       dsDependencies(deps, runtime, event),
     );
   }
@@ -247,10 +247,6 @@ async function maybeAutoReply(
   ) {
     return null;
   }
-  if (deps.random() >= runtime.autoReplyProbability) {
-    return null;
-  }
-
   let config: GroupConfig;
   try {
     config = await deps.configRepository.get(event.groupOpenid);
@@ -264,10 +260,14 @@ async function maybeAutoReply(
     });
     return null;
   }
+  if (!config.autoReplyForce && deps.random() >= runtime.autoReplyProbability) {
+    return null;
+  }
 
   deps.logger.info({
     outcome: "auto_reply_selected",
     eventType: event.eventType,
+    detail: config.autoReplyForce ? "force" : "probability",
   });
   return handleChat(event, message, chatDependencies(deps, event), {
     bypassChatSwitch: true,
@@ -387,6 +387,12 @@ export async function handleWebhook(
 
   await verifyWebhookSignature(request, raw, runtime.qqClientSecret, runtime.qqAppId);
   if (payload?.kind !== "event") {
+    if (value.t === "GROUP_MESSAGE_CREATE") {
+      new ConsoleLogger().info({
+        outcome: "group_message_ignored",
+        eventType: "GROUP_MESSAGE_CREATE",
+      });
+    }
     return jsonResponse({ op: 12 });
   }
 

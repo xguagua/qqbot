@@ -21,6 +21,7 @@ beforeAll(async () => {
       "../../migrations/0002_chat_sessions.sql",
       "../../migrations/0003_chat_enabled.sql",
       "../../migrations/0004_auto_reply_enabled.sql",
+      "../../migrations/0005_auto_reply_force.sql",
     ].map((path) => readFile(new URL(path, import.meta.url), "utf8")),
   );
   const statements = migrations
@@ -46,6 +47,7 @@ describe("D1 configuration repository", () => {
       reasoningEffort: "low",
       chatEnabled: true,
       autoReplyEnabled: true,
+      autoReplyForce: false,
       version: 0,
     });
 
@@ -57,6 +59,7 @@ describe("D1 configuration repository", () => {
         systemPrompt: "PRIVATE_PROMPT_VALUE",
         chatEnabled: false,
         autoReplyEnabled: false,
+        autoReplyForce: true,
       },
     );
     expect(updated).toMatchObject({
@@ -65,6 +68,7 @@ describe("D1 configuration repository", () => {
       systemPrompt: "PRIVATE_PROMPT_VALUE",
       chatEnabled: false,
       autoReplyEnabled: false,
+      autoReplyForce: true,
       updatedByOpenid: "integration-admin",
       version: 1,
     });
@@ -85,7 +89,8 @@ describe("D1 configuration repository", () => {
     expect(audit).toMatchObject({
       group_openid: "integration-group-a",
       actor_member_openid: "integration-admin",
-      changed_fields: "model,system_prompt,chat_enabled,auto_reply_enabled",
+      changed_fields:
+        "model,system_prompt,chat_enabled,auto_reply_enabled,auto_reply_force",
       previous_version: 0,
       new_version: 1,
     });

@@ -19,6 +19,7 @@ export interface GroupConfig {
   systemPrompt: string;
   chatEnabled: boolean;
   autoReplyEnabled: boolean;
+  autoReplyForce: boolean;
   updatedByOpenid: string;
   updatedAt: string;
   version: number;
@@ -29,7 +30,8 @@ export type ConfigField =
   | "reasoning_effort"
   | "system_prompt"
   | "chat_enabled"
-  | "auto_reply_enabled";
+  | "auto_reply_enabled"
+  | "auto_reply_force";
 
 export interface GroupConfigChanges {
   model?: DeepSeekModel;
@@ -37,6 +39,7 @@ export interface GroupConfigChanges {
   systemPrompt?: string;
   chatEnabled?: boolean;
   autoReplyEnabled?: boolean;
+  autoReplyForce?: boolean;
 }
 
 export interface ConfigRepository {
@@ -56,6 +59,7 @@ interface GroupConfigRow {
   system_prompt: string;
   chat_enabled: number;
   auto_reply_enabled: number;
+  auto_reply_force: number;
   updated_by_openid: string;
   updated_at: string;
   version: number;
@@ -80,6 +84,7 @@ export function defaultGroupConfig(groupOpenid: string): GroupConfig {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     chatEnabled: true,
     autoReplyEnabled: true,
+    autoReplyForce: false,
     updatedByOpenid: "",
     updatedAt: "",
     version: 0,
@@ -98,6 +103,7 @@ function parseConfigRow(row: unknown, expectedGroupOpenid: string): GroupConfig 
     record.system_prompt.length > MAX_SYSTEM_PROMPT_CHARS ||
     (record.chat_enabled !== 0 && record.chat_enabled !== 1) ||
     (record.auto_reply_enabled !== 0 && record.auto_reply_enabled !== 1) ||
+    (record.auto_reply_force !== 0 && record.auto_reply_force !== 1) ||
     typeof record.updated_by_openid !== "string" ||
     typeof record.updated_at !== "string" ||
     typeof record.version !== "number" ||
@@ -114,6 +120,7 @@ function parseConfigRow(row: unknown, expectedGroupOpenid: string): GroupConfig 
     systemPrompt: record.system_prompt,
     chatEnabled: record.chat_enabled === 1,
     autoReplyEnabled: record.auto_reply_enabled === 1,
+    autoReplyForce: record.auto_reply_force === 1,
     updatedByOpenid: record.updated_by_openid,
     updatedAt: record.updated_at,
     version: record.version,
@@ -137,6 +144,9 @@ function changedFields(changes: GroupConfigChanges): ConfigField[] {
   if (changes.autoReplyEnabled !== undefined) {
     fields.push("auto_reply_enabled");
   }
+  if (changes.autoReplyForce !== undefined) {
+    fields.push("auto_reply_force");
+  }
   return fields;
 }
 
@@ -148,6 +158,7 @@ function applyChanges(config: GroupConfig, changes: GroupConfigChanges): GroupCo
     systemPrompt: changes.systemPrompt ?? config.systemPrompt,
     chatEnabled: changes.chatEnabled ?? config.chatEnabled,
     autoReplyEnabled: changes.autoReplyEnabled ?? config.autoReplyEnabled,
+    autoReplyForce: changes.autoReplyForce ?? config.autoReplyForce,
   };
 }
 
@@ -165,7 +176,8 @@ export class D1ConfigRepository implements ConfigRepository {
       const row = await this.#db
         .prepare(
           "SELECT group_openid, model, reasoning_effort, system_prompt, " +
-            "chat_enabled, auto_reply_enabled, updated_by_openid, updated_at, version " +
+            "chat_enabled, auto_reply_enabled, auto_reply_force, " +
+            "updated_by_openid, updated_at, version " +
             "FROM group_configs " +
             "WHERE group_openid = ?",
         )
@@ -199,12 +211,14 @@ export class D1ConfigRepository implements ConfigRepository {
     const update = this.#db
       .prepare(
         "INSERT INTO group_configs " +
-          "(group_openid, model, reasoning_effort, system_prompt, chat_enabled, auto_reply_enabled, " +
-          "updated_by_openid, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+          "(group_openid, model, reasoning_effort, system_prompt, chat_enabled, " +
+          "auto_reply_enabled, auto_reply_force, updated_by_openid, updated_at, version) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
           "ON CONFLICT(group_openid) DO UPDATE SET " +
           "model = excluded.model, reasoning_effort = excluded.reasoning_effort, " +
           "system_prompt = excluded.system_prompt, chat_enabled = excluded.chat_enabled, " +
           "auto_reply_enabled = excluded.auto_reply_enabled, " +
+          "auto_reply_force = excluded.auto_reply_force, " +
           "updated_by_openid = excluded.updated_by_openid, " +
           "updated_at = excluded.updated_at, version = excluded.version " +
           "WHERE group_configs.version = ?",
@@ -216,6 +230,7 @@ export class D1ConfigRepository implements ConfigRepository {
         next.systemPrompt,
         next.chatEnabled ? 1 : 0,
         next.autoReplyEnabled ? 1 : 0,
+        next.autoReplyForce ? 1 : 0,
         actorMemberOpenid,
         updatedAt,
         nextVersion,

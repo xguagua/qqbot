@@ -58,7 +58,7 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - 普通文本聊天，固定使用 `deepseek-flash` 非思考模式与内置流萤 System Prompt。
 - `/help [Command]`、`/DS list [model|think]`。
 - 管理员 `/chat [true|false]` 群聊天开关。
-- 管理员 `/autores [true|false]` 查询或切换当前群自动回复。
+- 管理员 `/autores [true|false]` 查询或切换当前群自动回复；群主可用 `/autores force` 启用逐条强制回复。
 - 普通群消息按全局概率自动交给流萤聊天 agent。
 - `/version` 部署版本信息。
 - 普通聊天与 `/DS ask` 的附件传递。
@@ -373,13 +373,15 @@ pong
 
 ### 9.12 `/autores`
 
-- `/autores` 查询当前群自动回复开关。
+- `/autores` 查询当前群自动回复开关和模式。
 - `/autores true` 启用当前群自动回复。
 - `/autores false` 关闭当前群自动回复；关闭后普通群消息不调用 DeepSeek。
+- `/autores force` 启用强制模式，跳过概率采样，所有通过安全过滤的普通群消息都触发自动回复；仅群主可用。
 - 参数大小写不敏感，其他参数属于错误命令。
-- 仅允许群主、群管理员或显式白名单执行。
+- `true`、`false` 和查询允许群主、群管理员或显式白名单执行；`force` 仅允许群主。
 - 开关按 `group_openid` 隔离，并写入版本化配置审计。
 - 自动回复概率由 Worker 变量 `AUTO_REPLY_PROBABILITY` 控制，默认 `0.1`，硬限制为 `0` 到 `1`。
+- `force` 模式绕过概率，但不绕过机器人消息、斜杠指令、空消息、卡片消息和聊天安全检查。
 - 参数未命中和概率未命中的群消息不调用 DeepSeek、不写入上下文、不发送回复。
 
 ### 9.13 `/version`
@@ -397,7 +399,8 @@ pong
 - 普通文本聊天：当前群所有成员。
 - `/help` 和 `/DS list`：当前群所有成员。
 - `/chat`：仅群主、群管理员或显式白名单。
-- `/autores`：仅群主、群管理员或显式白名单。
+- `/autores [true|false]`：仅群主、群管理员或显式白名单。
+- `/autores force`：仅群主。
 - `/version`：当前群所有成员。
 - `/DS set model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
 - `/DS clear|query model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
@@ -451,6 +454,7 @@ reasoning_effort
 system_prompt
 chat_enabled
 auto_reply_enabled
+auto_reply_force
 updated_by_openid
 updated_at
 version
@@ -652,6 +656,7 @@ DEPLOYED_AT
 29. `/version` 只暴露部署时间与 Git SHA Worker 变量。
 30. 未 @ 机器人的普通群消息只在 `/autores` 开启且概率命中时进入聊天 agent；斜杠指令和机器人消息永不自动回复。
 31. 自动回复复用普通聊天的流萤 Prompt、固定模型、费用预算和群/用户隔离上下文。
+32. `/autores force` 仅群主可用，启用后跳过概率采样但继续执行安全过滤；普通管理员只能使用 `true`、`false` 和查询。
 
 外部集成测试：
 

@@ -323,27 +323,69 @@ describe("Worker webhook flow", () => {
     await send("auto-status-disabled", "/autores");
     await send("auto-status-group-b", "/autores", "owner", "group-b");
     await send("auto-enable", "/autores true");
+    await send("auto-force-admin", "/autores force", "admin");
 
     const replies = harness.sender.messages.map((message) => message.content);
     expect(replies[0]).toContain("权限不足");
-    expect(replies[1]).toBe("本群自动回复功能：已启用");
+    expect(replies[1]).toBe("本群自动回复功能：已启用（概率模式）");
     expect(replies[2]).toBe("已关闭本群自动回复功能。");
     expect(replies[3]).toBe("本群自动回复功能：已关闭");
-    expect(replies[4]).toBe("本群自动回复功能：已启用");
-    expect(replies[5]).toBe("已启用本群自动回复功能。");
+    expect(replies[4]).toBe("本群自动回复功能：已启用（概率模式）");
+    expect(replies[5]).toBe("已启用本群概率自动回复功能。");
+    expect(replies[6]).toContain("只有群主");
     expect(harness.ai.requests).toHaveLength(0);
     expect(harness.configs.updates).toEqual([
       {
         groupOpenid: "group-a",
         actor: "member-1",
-        fields: { autoReplyEnabled: false },
+        fields: { autoReplyEnabled: false, autoReplyForce: false },
       },
       {
         groupOpenid: "group-a",
         actor: "member-1",
-        fields: { autoReplyEnabled: true },
+        fields: { autoReplyEnabled: true, autoReplyForce: false },
       },
     ]);
+  });
+
+  it("lets only the owner force every eligible auto reply", async () => {
+    const harness = createHarness({ random: () => 0.99 });
+    await submit(
+      await signedEventRequest(
+        event({
+          messageId: "auto-force-owner",
+          memberRole: "owner",
+          content: "/autores force",
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: false,
+          messageId: "auto-force-hit",
+          content: "强制模式消息",
+          mentions: [],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.ai.requests).toHaveLength(1);
+    expect(harness.ai.requests[0]).toMatchObject({
+      model: "deepseek-flash",
+      reasoningEffort: "none",
+      question: "强制模式消息",
+    });
+    expect(harness.sender.messages[0]?.content).toContain("强制模式");
+    expect(harness.sender.messages[1]?.content).toBe("测试回答");
+    expect((await harness.configs.get("group-a")).autoReplyForce).toBe(true);
   });
 
   it("lists available models and thinking levels for all members", async () => {

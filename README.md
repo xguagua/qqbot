@@ -12,7 +12,7 @@ Cloudflare Worker 实现的 QQ 官方机器人主分支。它只处理群内 `@�
 - `/help [Command]` 与 `/DS list [model|think]`
 - 管理员 `/chat [true|false]` 查询或调整群聊天开关
 - `/version` 返回部署时间与 Git commit
-- 管理员 `/autores [true|false]` 查询或调整当前群概率自动回复
+- 管理员 `/autores [true|false]` 查询或调整当前群概率自动回复；群主可用 `/autores force` 启用逐条强制回复
 - 普通文本：以流萤角色进行按用户隔离的短期聊天
 - 普通聊天和 `/DS ask` 支持附带文件
 
@@ -88,6 +88,7 @@ QQ Webhook
 - 斜杠命令、空消息和不支持的卡片消息不自动回复。
 - 机器人作者消息一律忽略，避免机器人与机器人之间形成回复循环。
 - 每个群可用 `/autores true|false` 独立开关；`/autores` 查询当前状态。仅群主、群管理员或白名单可用。
+- 群主可用 `/autores force` 进入强制模式：跳过概率采样，每条通过安全过滤的普通群消息都会触发自动回复。`/autores true` 恢复概率模式，`/autores false` 关闭。
 
 修改默认概率时编辑 `wrangler.toml`：
 
@@ -288,6 +289,7 @@ pnpm exec wrangler d1 migrations apply qqbot --remote
 0002_chat_sessions.sql
 0003_chat_enabled.sql
 0004_auto_reply_enabled.sql
+0005_auto_reply_force.sql
 ```
 
 该迁移创建：
@@ -591,10 +593,10 @@ pong
 
 ```text
 @机器人 /autores
-@机器人 /autores true
+@机器人 /autores force
 ```
 
-然后由群成员发送若干条不以 `/` 开头的普通消息。默认约 10% 会触发流萤回复；开关关闭、概率未命中和斜杠指令都不调用 DeepSeek。日志中的命中记录为 `auto_reply_selected`，关闭开关后的命中记录为 `auto_reply_disabled`。
+`force` 仅群主可用。然后由群成员发送若干条不以 `/` 开头的普通消息，每条都应触发流萤回复；若使用 `/autores true`，默认只有约 10% 触发。日志中的命中记录为 `auto_reply_selected`，其中 `detail` 为 `force` 或 `probability`；关闭开关后的命中记录为 `auto_reply_disabled`。
 
 #### 11.5 验证去重和被动回复
 
@@ -805,6 +807,7 @@ pnpm exec wrangler secret put QQ_CLIENT_SECRET
 - [ ] 远程 D1 迁移 `0002_chat_sessions.sql` 已应用。
 - [ ] 远程 D1 迁移 `0003_chat_enabled.sql` 已应用。
 - [ ] 远程 D1 迁移 `0004_auto_reply_enabled.sql` 已应用。
+- [ ] 远程 D1 迁移 `0005_auto_reply_force.sql` 已应用。
 - [ ] `QQ_APP_ID`、`QQ_CLIENT_SECRET`、`DEEPSEEK_API_KEY` 已设置为 Secrets。
 - [ ] `wrangler secret list` 不显示任何 Secret 值。
 - [ ] Durable Object 两个类已随 Worker 首次部署成功创建。

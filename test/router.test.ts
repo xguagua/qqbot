@@ -79,15 +79,19 @@ describe("command routing", () => {
     expect(parseCommand("/VERSION")).toEqual({ kind: "version" });
     expect(parseCommand("/autores")).toEqual({
       kind: "auto_reply_setting",
-      enabled: null,
+      mode: "query",
     });
     expect(parseCommand("/AUTORES TRUE")).toEqual({
       kind: "auto_reply_setting",
-      enabled: true,
+      mode: "probability",
     });
     expect(parseCommand("/autores false")).toEqual({
       kind: "auto_reply_setting",
-      enabled: false,
+      mode: "off",
+    });
+    expect(parseCommand("/autores FORCE")).toEqual({
+      kind: "auto_reply_setting",
+      mode: "force",
     });
   });
 

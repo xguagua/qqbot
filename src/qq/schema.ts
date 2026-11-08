@@ -209,16 +209,29 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
   if (data === null || author === null) {
     throw new AppError("invalid_request", "Invalid group message event", 400);
   }
+  const groupOpenid = isNonEmptyString(data.group_openid)
+    ? data.group_openid
+    : isNonEmptyString(data.group_id)
+      ? data.group_id
+      : undefined;
+  const memberOpenid = isNonEmptyString(author.member_openid)
+    ? author.member_openid
+    : isNonEmptyString(author.id)
+      ? author.id
+      : undefined;
+  const messageType = data.message_type ?? 0;
+  const timestamp = isNonEmptyString(data.timestamp)
+    ? data.timestamp
+    : new Date().toISOString();
 
   if (
     !isNonEmptyString(data.id) ||
     data.id.length > 512 ||
-    !isNonEmptyString(data.group_openid) ||
-    data.group_openid.length > 512 ||
-    !isNonEmptyString(author.member_openid) ||
-    author.member_openid.length > 512 ||
-    !isString(data.content) ||
-    !isNonEmptyString(data.timestamp)
+    groupOpenid === undefined ||
+    groupOpenid.length > 512 ||
+    memberOpenid === undefined ||
+    memberOpenid.length > 512 ||
+    !isString(data.content)
   ) {
     throw new AppError("invalid_request", "Required group message fields are missing", 400);
   }
@@ -232,14 +245,11 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
     return null;
   }
 
-  if (
-    (data.message_type !== 0 && data.message_type !== 103) ||
-    (data.ark_data !== undefined && data.ark_data !== null)
-  ) {
+  if ((messageType !== 0 && messageType !== 103) || (data.ark_data !== undefined && data.ark_data !== null)) {
     return null;
   }
 
-  const timestampMs = Date.parse(data.timestamp);
+  const timestampMs = Date.parse(timestamp);
   if (!Number.isFinite(timestampMs)) {
     throw new AppError("invalid_request", "Invalid event timestamp", 400);
   }
@@ -253,17 +263,17 @@ function parseGroupEvent(t: unknown, d: unknown): GroupAtMessageEvent | null {
     kind: "event",
     eventType: t,
     messageId: data.id,
-    groupOpenid: data.group_openid,
-    memberOpenid: author.member_openid,
+    groupOpenid,
+    memberOpenid,
     memberRole: role,
     authorBot,
     addressedToBot,
     content: normalizeMessageText(data.content),
-    messageType: data.message_type,
+    messageType,
     quotedContent: parseQuotedContent(data.msg_elements),
     attachments: parseAttachments(data.attachments, data.msg_elements),
     mentions,
-    timestamp: data.timestamp,
+    timestamp,
     timestampMs,
   };
 }
