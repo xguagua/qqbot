@@ -155,6 +155,66 @@ describe("minimal version/at worker", () => {
     );
   });
 
+  it("allows another robot as the at target but not itself", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: true,
+          messageId: "at-other-bot",
+          memberRole: "owner",
+          content: "<@self-bot> /at <@target-bot> 你好",
+          mentions: [
+            {
+              id: "self-bot",
+              memberOpenid: "self-bot-openid",
+              role: "admin",
+              bot: true,
+              isYou: true,
+            },
+            {
+              id: "target-bot",
+              memberOpenid: "target-bot-openid",
+              role: "member",
+              bot: true,
+              isYou: false,
+            },
+          ],
+        }),
+      ),
+      harness,
+    );
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: true,
+          messageId: "at-self",
+          memberRole: "owner",
+          content: "<@self-bot> /at <@self-bot> 自己",
+          mentions: [
+            {
+              id: "self-bot",
+              memberOpenid: "self-bot-openid",
+              role: "admin",
+              bot: true,
+              isYou: true,
+            },
+          ],
+        }),
+      ),
+      harness,
+    );
+
+    expect(harness.sender.messages[0]).toMatchObject({
+      content: '<qqbot-at-user id="target-bot-openid" /> 你好',
+      format: "mention",
+    });
+    expect(harness.sender.messages[1]?.content).toContain("群成员或机器人");
+    expect(harness.sender.messages[1]?.content).toContain("不能是机器人自身");
+  });
+
   it("ignores unsupported commands and duplicate events", async () => {
     const harness = createHarness();
     const value = event({ messageId: "duplicate", content: "/version" });

@@ -10,17 +10,17 @@ export function handleAtRequest(
     return "不可以：只有群主可以要求机器人主动 at 成员。";
   }
 
-  const botMentionIds = new Set(
+  const selfMentionIds = new Set(
     event.mentions
-      .filter((mention) => mention.bot || mention.isYou)
+      .filter((mention) => mention.isYou)
       .flatMap((mention) => [
         mention.id,
         ...(mention.memberOpenid === undefined ? [] : [mention.memberOpenid]),
       ]),
   );
-  const targetMentionIds = mentionIds.filter((id) => !botMentionIds.has(id));
+  const targetMentionIds = mentionIds.filter((id) => !selfMentionIds.has(id));
   const availableTargets = event.mentions.filter(
-    (mention) => !mention.bot && !mention.isYou,
+    (mention) => !mention.isYou,
   );
   if (targetMentionIds.length > 1) {
     return "请在 /at 后只直接 @ 一位目标成员。";
@@ -39,7 +39,7 @@ export function handleAtRequest(
     directTarget !== undefined &&
     matchedTarget === undefined
   ) {
-    return "目标成员不在本消息的 mention 列表中，请重新 @ 后再试。";
+    return "目标成员或机器人不在本消息的 mention 列表中，请重新 @ 后再试。";
   }
 
   const fallbackTarget =
@@ -51,7 +51,7 @@ export function handleAtRequest(
     fallbackTarget?.memberOpenid ??
     fallbackTarget?.id;
   if (requestedTargetId === undefined) {
-    return "请在 /at 后直接 @ 一位真实群成员。";
+    return "请在 /at 后直接 @ 一位群成员或机器人（不能是机器人自身）。";
   }
   if (!/^[A-Za-z0-9._~+/=-]+$/.test(requestedTargetId)) {
     return "目标成员的标识无效，请重新 @ 后再试。";
