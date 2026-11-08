@@ -13,6 +13,7 @@ Cloudflare Worker 实现的 QQ 官方机器人主分支。它只处理群内 `@�
 - 管理员 `/chat [true|false]` 查询或调整群聊天开关
 - `/version` 返回部署时间与 Git commit
 - 管理员 `/autores [true|false]` 查询或调整当前群概率自动回复；群主可用 `/autores force` 启用逐条强制回复
+- 群主 `/at @成员 [消息]` 主动 @ 直接指定的成员
 - 普通文本：以流萤角色进行按用户隔离的短期聊天
 - 普通聊天和 `/DS ask` 支持附带文件
 
@@ -20,7 +21,7 @@ Cloudflare Worker 实现的 QQ 官方机器人主分支。它只处理群内 `@�
 
 ## 当前状态
 
-主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。当前主分支包含流萤上下文聊天、聊天/DS 附件、图片与 GIF 表情包、群聊天开关、引用消息、`/version`、概率自动回复和 `/autores`。
+主分支代码、D1 迁移、Worker 本地测试和本地 D1 集成测试已实现。Cloudflare Worker 部署到自定义域名 `https://qqbot.xguagua.cc.cd`，远程 D1 表和索引已确认，三个运行时 Secrets 均已配置，QQ Webhook 已绑定并能收到 `GROUP_AT_MESSAGE_CREATE` 事件。线上日志已确认真实 `ping` 和 `/DS ask` 完成 `reply_sent`。当前主分支包含流萤上下文聊天、聊天/DS 附件、图片与 GIF 表情包、群聊天开关、引用消息、`/version`、概率自动回复、`/autores` 和群主 `/at`。
 
 本地 Git 仓库的 `main` 跟踪 `origin/main`；按具体任务要求执行提交与推送。
 
@@ -98,6 +99,18 @@ AUTO_REPLY_PROBABILITY = "0.1"
 ```
 
 修改后需重新运行 `./deploy.sh`。`0` 表示全局关闭随机触发，`1` 表示所有符合条件的普通群消息都触发，仍受群 `/autores` 开关和 AI 预算限制。
+
+## 主动 @ 成员
+
+只有群主可以使用：
+
+```text
+@Bot /at @目标成员 [消息]
+```
+
+机器人使用 `msg_type=2` Markdown 消息，在 `markdown.content` 中发送 `<qqbot-at-user id="TARGET_MEMBER_OPENID" />`。目标必须来自同一条消息中唯一、真实且非机器人的 mention。
+
+`GROUP_AT_MESSAGE_CREATE` 可能裁掉其他成员 mention，因此生产群应开启“获取群内全部消息”并订阅 `GROUP_MESSAGE_CREATE`。
 
 ## 版本信息
 

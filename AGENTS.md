@@ -26,7 +26,7 @@
 - 首版主分支支持 `ping` 和 DeepSeek 问答。
 - 完美世界竞技平台战绩查询只能进入独立实验分支。
 
-Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `reply_sent`。当前主分支包含群聊天开关、引用消息、图片/GIF 表情包、`/version`、概率自动回复与 `/autores`；普通聊天和自动回复都仅保留费用预算。不要声称所有主分支验收项已经完成。
+Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `reply_sent`。当前主分支包含群聊天开关、引用消息、图片/GIF 表情包、`/version`、概率自动回复、`/autores` 与群主 `/at`；普通聊天和自动回复都仅保留费用预算。不要声称所有主分支验收项已经完成。
 
 ## 3. 当前仓库状态
 
@@ -59,6 +59,7 @@ Cloudflare 主分支已部署，真实 `ping` 和 `/DS ask` 已完成线上 `rep
 - `/help [Command]`、`/DS list [model|think]`。
 - 管理员 `/chat [true|false]` 群聊天开关。
 - 管理员 `/autores [true|false]` 查询或切换当前群自动回复；群主可用 `/autores force` 启用逐条强制回复。
+- 群主 `/at @成员 [消息]` 主动 @ 直接指定的成员。
 - 普通群消息按全局概率自动交给流萤聊天 agent。
 - `/version` 部署版本信息。
 - 普通聊天与 `/DS ask` 的附件传递。
@@ -384,7 +385,17 @@ pong
 - `force` 模式绕过概率，但不绕过机器人消息、斜杠指令、空消息、卡片消息和聊天安全检查。
 - 参数未命中和概率未命中的群消息不调用 DeepSeek、不写入上下文、不发送回复。
 
-### 9.13 `/version`
+### 9.13 `/at`
+
+- 语法：`@Bot /at @成员 [消息]`。
+- 仅群主可用。
+- 必须直接 @ 唯一真实成员，并优先使用完整 `GROUP_MESSAGE_CREATE` 的 `mentions` 列表交叉校验。
+- 目标 id 使用该成员的 `member_openid`。
+- 输出为 `msg_type=2` Markdown 消息，`markdown.content` 中使用 `<qqbot-at-user id="..." />`。
+- 移除用户消息及伪造的 `qqbot-*`、`<@...>` 标签。
+- 不调用 DeepSeek，不额外发送第二条消息。
+
+### 9.14 `/version`
 
 - 返回 `GIT_COMMIT_SHA` 和 `DEPLOYED_AT`。
 - 这两个值在部署时通过 Worker 变量覆盖，不进入 Secrets。
@@ -401,6 +412,7 @@ pong
 - `/chat`：仅群主、群管理员或显式白名单。
 - `/autores [true|false]`：仅群主、群管理员或显式白名单。
 - `/autores force`：仅群主。
+- `/at`：仅群主。
 - `/version`：当前群所有成员。
 - `/DS set model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
 - `/DS clear|query model|think|spm`：`member_role` 为 `admin` 或 `owner`，或 `member_openid` 在显式白名单中。
@@ -569,6 +581,7 @@ src/commands/router.ts       指令识别与分发
 src/commands/ping.ts         ping
 src/commands/help.ts         全部与单命令帮助
 src/commands/version.ts      部署版本信息
+src/commands/at.ts           群主主动 @ 成员
 src/commands/ds.ts           DeepSeek 指令
 src/commands/chat.ts         流萤角色聊天与限额
 src/chat/policy.ts           角色提示词、代码/注入/输出防护
@@ -657,6 +670,7 @@ DEPLOYED_AT
 30. 未 @ 机器人的普通群消息只在 `/autores` 开启且概率命中时进入聊天 agent；斜杠指令和机器人消息永不自动回复。
 31. 自动回复复用普通聊天的流萤 Prompt、固定模型、费用预算和群/用户隔离上下文。
 32. `/autores force` 仅群主可用，启用后跳过概率采样但继续执行安全过滤；普通管理员只能使用 `true`、`false` 和查询。
+33. `/at` 仅群主可用，目标必须来自唯一真实 mention，并映射到 `member_openid`。
 
 外部集成测试：
 
@@ -710,9 +724,15 @@ DEPLOYED_AT
 
 ### 主分支
 
-- 只包含 `ping`、`/DS`、平台接入、权限、配置、限流与审计。
+- 包含 `ping`、`/DS`、聊天、自动回复、`/at`、`/version`、平台接入、权限、配置、限流与审计。
 - 不导入完美世界实验代码。
 - 不因实验方便而放宽正式群安全边界。
+
+### `feature/version-at-only` 精简实验分支
+
+- 永久保留，仅实现 `/version` 和 `/at`。
+- 不从该分支直接合并回主分支；只允许定向挑选需要的命令实现。
+- 该分支可用于最小生产或隔离实验，但当前主分支仍是完整功能主线。
 
 ### `/pw` 实验分支
 

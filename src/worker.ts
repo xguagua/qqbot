@@ -1,6 +1,7 @@
 import type { AIClient } from "./ai/deepseek";
 import { DeepSeekClient } from "./ai/deepseek";
 import { handleChat, type ChatCommandDependencies } from "./commands/chat";
+import { handleAtRequest } from "./commands/at";
 import {
   handleAutoReplySetting,
   handleDsAsk,
@@ -206,6 +207,9 @@ async function commandReply(
       command.mode,
       dsDependencies(deps, runtime, event),
     );
+  }
+  if (command.kind === "at_request") {
+    return handleAtRequest(event, command.message, command.mentionIds);
   }
   if (command.kind === "version") {
     return versionReply(runtime);

@@ -19,6 +19,7 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const MAX_QUERY_CHARS = 2_000;
 export const MAX_CHAT_INPUT_CHARS = 1_000;
 export const MAX_QUOTED_CONTEXT_CHARS = 600;
+export const MAX_AT_MESSAGE_CHARS = 500;
 export const MAX_SYSTEM_PROMPT_CHARS = 1_000;
 export const MAX_OUTPUT_TOKENS = 1_024;
 export const MAX_ESTIMATED_INPUT_TOKENS = 16_384;

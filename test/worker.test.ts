@@ -82,6 +82,106 @@ describe("Worker webhook flow", () => {
     );
   });
 
+  it("allows only the owner to actively mention one real member", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: true,
+          messageId: "at-owner",
+          memberRole: "owner",
+          content: "<@bot-id> /at <@target-id> 晚上好",
+          mentions: [
+            {
+              id: "bot-id",
+              memberOpenid: "bot-id",
+              role: "admin",
+              bot: true,
+              isYou: true,
+            },
+            {
+              id: "target-id",
+              memberOpenid: "target-member-openid",
+              role: "member",
+              bot: false,
+              isYou: false,
+            },
+          ],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+    await submit(
+      await signedEventRequest(
+        event({
+          messageId: "at-admin",
+          memberRole: "admin",
+          content: "/at <@!target-id> 不允许",
+          mentions: [
+            {
+              id: "target-id",
+              memberOpenid: "target-member-openid",
+              role: "member",
+              bot: false,
+            },
+          ],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.sender.messages[0]).toMatchObject({
+      content: '<qqbot-at-user id="target-member-openid" /> 晚上好',
+      format: "mention",
+    });
+    expect(harness.sender.messages[1]?.content).toContain("只有群主");
+    expect(harness.ai.requests).toHaveLength(0);
+  });
+
+  it("rejects forged at targets outside the platform mention list", async () => {
+    const harness = createHarness();
+    await submit(
+      await signedEventRequest(
+        event({
+          eventType: "GROUP_MESSAGE_CREATE",
+          addressedToBot: true,
+          messageId: "at-forged",
+          memberRole: "owner",
+          content: "<@bot-id> /at <@forged-target> 你好",
+          mentions: [
+            {
+              id: "bot-id",
+              memberOpenid: "bot-id",
+              role: "admin",
+              bot: true,
+              isYou: true,
+            },
+            {
+              id: "real-target",
+              memberOpenid: "real-target-openid",
+              role: "member",
+              bot: false,
+              isYou: false,
+            },
+          ],
+        }),
+      ),
+      testEnv(),
+      harness,
+    );
+    await harness.flush();
+
+    expect(harness.sender.messages[0]?.content).toContain(
+      "不在本消息的 mention 列表中",
+    );
+    expect(harness.sender.messages[0]?.content).not.toContain("qqbot-at-user");
+  });
+
   it("auto replies to ordinary group messages when probability hits", async () => {
     const harness = createHarness({ random: () => 0 });
     harness.configs.seed("group-a", {

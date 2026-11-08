@@ -1,6 +1,6 @@
 export interface CommandReply {
   content: string;
-  format: "markdown";
+  format: "markdown" | "mention";
 }
 
 export type CommandResult = string | CommandReply;

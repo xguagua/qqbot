@@ -95,6 +95,26 @@ describe("command routing", () => {
     });
   });
 
+  it("routes owner at requests with structured targets", () => {
+    expect(parseCommand("/at <@!target-id> 你好")).toEqual({
+      kind: "at_request",
+      message: "你好",
+      mentionIds: ["target-id"],
+    });
+    expect(parseCommand("/at")).toEqual({
+      kind: "at_request",
+      message: "",
+      mentionIds: [],
+    });
+    expect(
+      parseCommand('/at <qqbot-at-user id="content-target" /> 你好'),
+    ).toEqual({
+      kind: "at_request",
+      message: "你好",
+      mentionIds: ["content-target"],
+    });
+  });
+
   it("reports malformed DS commands", () => {
     expect(parseCommand("/ds wat")).toEqual({ kind: "invalid", usage: "ds" });
     expect(parseCommand("/ds set unknown value")).toEqual({

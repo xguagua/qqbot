@@ -27,6 +27,11 @@ const HELP_ENTRIES: readonly HelpEntry[] = [
       "/autores [true|false|force]\n查询或调整当前群自动回复；force 对每条符合条件的消息强制回复且仅群主可用。",
   },
   {
+    aliases: ["/at", "at"],
+    text:
+      "/at @成员 [消息]\n群主在 /at 后直接 @ 一位目标成员，可选附带消息；机器人会在 Markdown 回复中主动 @ 该成员。仅群主可用。",
+  },
+  {
     aliases: ["/version", "version"],
     text: "/version\n返回当前 Worker 的部署时间和 Git commit ID。",
   },
@@ -88,6 +93,7 @@ export function helpReply(command = ""): string {
       "普通文本 — 与流萤聊天，可附文件",
       "/chat [true|false] — 查询或调整本群聊天开关",
       "/autores [true|false|force] — 查询或调整本群自动回复",
+      "/at @成员 [消息] — 群主主动 @ 直接指定的成员",
       "/version — 查看部署时间与 Git commit",
       "/help [Command] — 查看帮助",
       "/DS ask <问题> [附件] — 向 DeepSeek 提问，可引用消息，以 Markdown 返回",

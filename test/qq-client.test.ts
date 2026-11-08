@@ -232,4 +232,31 @@ describe("QQ message client", () => {
     });
   });
 
+  it("sends member mentions in Markdown content", async () => {
+    let body: unknown;
+    const client = new QQApiClient({
+      tokens,
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({ id: "reply-id" }), { status: 200 });
+      },
+    });
+
+    await client.sendMessage({
+      groupOpenid: "group",
+      messageId: "message",
+      eventTimestampMs: Date.now(),
+      content: '<qqbot-at-user id="target" /> 你好',
+      sequence: 1,
+      format: "mention",
+    });
+
+    expect(body).toEqual({
+      msg_type: 2,
+      markdown: { content: '<qqbot-at-user id="target" /> 你好' },
+      msg_id: "message",
+      msg_seq: 1,
+    });
+  });
+
 });
